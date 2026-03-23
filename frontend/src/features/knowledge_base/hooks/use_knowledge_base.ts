@@ -1,6 +1,5 @@
 /**
- * 模块名称：features/knowledge_base/hooks/use_knowledge_base
- * 主要功能：统一管理知识库页面的状态、缓存恢复、轮询与用户动作。
+ * Workspace state management for the knowledge base UI.
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -11,7 +10,10 @@ import {
   fetch_documents,
   fetch_graph,
   fetch_job,
+  fetch_model_configuration,
   run_query,
+  test_model_configuration,
+  update_model_configuration,
   upload_document,
 } from '../api/knowledge_base_api';
 import { EMPTY_GRAPH, INITIAL_STATUS_MESSAGE, JOB_POLL_INTERVAL_MS } from '../constants/knowledge_base_constants';
@@ -21,28 +23,36 @@ import type {
   GraphPayload,
   KnowledgeBaseDocument,
   KnowledgeBaseJob,
+  ModelConfiguration,
+  ModelConfigurationTestRequest,
+  ModelConfigurationTestResult,
+  ModelConfigurationUpdateRequest,
   QueryResult,
 } from '../types/knowledge_base';
 import {
   read_documents_cache,
   read_graph_cache,
+  read_model_configuration_cache,
   read_workspace_preferences,
   write_documents_cache,
   write_graph_cache,
+  write_model_configuration_cache,
   write_workspace_preferences,
 } from '../utils/cache_utils';
 import { create_pending_job, get_active_job_ids, merge_jobs } from '../utils/job_utils';
 
-/**
- * Hook 返回值。
- */
 export interface UseKnowledgeBaseResult {
   documents: KnowledgeBaseDocument[];
   jobs: KnowledgeBaseJob[];
   graph: GraphPayload;
+  model_configuration: ModelConfiguration | null;
+  model_configuration_test_result: ModelConfigurationTestResult | null;
   selected_document_id: string | null;
   include_chunks: boolean;
   is_graph_loading: boolean;
+  is_model_config_loading: boolean;
+  is_model_config_saving: boolean;
+  is_model_config_testing: boolean;
   selected_node: GraphNodeRecord | null;
   selected_edge: GraphEdgeRecord | null;
   source_node_id: string;
@@ -67,16 +77,14 @@ export interface UseKnowledgeBaseResult {
   submit_query: () => Promise<void>;
   create_edge: () => Promise<void>;
   remove_selected_edge: () => Promise<void>;
+  save_model_configuration: (payload: ModelConfigurationUpdateRequest) => Promise<void>;
+  run_model_configuration_test: (payload: ModelConfigurationTestRequest) => Promise<void>;
 }
 
-/**
- * 管理知识库页面状态。
- *
- * @returns 页面所需状态与动作集合。
- */
 export function use_knowledge_base(): UseKnowledgeBaseResult {
   const initial_preferences = useMemo(() => read_workspace_preferences(), []);
   const initial_documents = useMemo(() => read_documents_cache(), []);
+  const initial_model_configuration = useMemo(() => read_model_configuration_cache(), []);
   const initial_graph = useMemo(
     () => read_graph_cache(initial_preferences.selected_document_id, initial_preferences.include_chunks),
     [initial_preferences.include_chunks, initial_preferences.selected_document_id],
@@ -85,11 +93,17 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
   const [documents, set_documents] = useState<KnowledgeBaseDocument[]>(initial_documents);
   const [jobs, set_jobs] = useState<KnowledgeBaseJob[]>([]);
   const [graph, set_graph] = useState<GraphPayload>(initial_graph);
+  const [model_configuration, set_model_configuration] = useState<ModelConfiguration | null>(initial_model_configuration);
+  const [model_configuration_test_result, set_model_configuration_test_result] =
+    useState<ModelConfigurationTestResult | null>(null);
   const [selected_document_id, set_selected_document_id] = useState<string | null>(
     initial_preferences.selected_document_id,
   );
   const [include_chunks, set_include_chunks] = useState<boolean>(initial_preferences.include_chunks);
   const [is_graph_loading, set_is_graph_loading] = useState<boolean>(false);
+  const [is_model_config_loading, set_is_model_config_loading] = useState<boolean>(false);
+  const [is_model_config_saving, set_is_model_config_saving] = useState<boolean>(false);
+  const [is_model_config_testing, set_is_model_config_testing] = useState<boolean>(false);
   const [selected_node, set_selected_node] = useState<GraphNodeRecord | null>(null);
   const [selected_edge, set_selected_edge] = useState<GraphEdgeRecord | null>(null);
   const [source_node_id, set_source_node_id] = useState<string>('');
@@ -108,6 +122,7 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
 
   useEffect(() => {
     void refresh_documents();
+    void refresh_model_configuration();
   }, []);
 
   useEffect(() => {
@@ -143,9 +158,6 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     return () => window.clearInterval(timer);
   }, [jobs, include_chunks, selected_document_id]);
 
-  /**
-   * 刷新文档列表。
-   */
   async function refresh_documents(): Promise<void> {
     try {
       const response: KnowledgeBaseDocument[] = await fetch_documents();
@@ -156,12 +168,6 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     }
   }
 
-  /**
-   * 刷新图谱数据。
-   *
-   * @param document_id - 可选文档过滤条件。
-   * @param next_include_chunks - 是否包含切块节点。
-   */
   async function refresh_graph(document_id: string | null, next_include_chunks: boolean): Promise<void> {
     set_is_graph_loading(true);
     try {
@@ -181,11 +187,20 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     }
   }
 
-  /**
-   * 轮询任务状态。
-   *
-   * @param job_ids - 待轮询任务主键列表。
-   */
+  async function refresh_model_configuration(): Promise<void> {
+    set_is_model_config_loading(true);
+    try {
+      const response: ModelConfiguration = await fetch_model_configuration();
+      set_model_configuration(response);
+      set_model_configuration_test_result(null);
+      write_model_configuration_cache(response);
+    } catch (request_error) {
+      set_error((request_error as Error).message);
+    } finally {
+      set_is_model_config_loading(false);
+    }
+  }
+
   async function poll_jobs(job_ids: string[]): Promise<void> {
     try {
       const next_jobs: KnowledgeBaseJob[] = await Promise.all(job_ids.map((job_id) => fetch_job(job_id)));
@@ -209,11 +224,6 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     }
   }
 
-  /**
-   * 上传单个文件。
-   *
-   * @param file - 待上传文件。
-   */
   async function upload_file(file: File): Promise<void> {
     set_is_uploading(true);
     set_error(null);
@@ -233,9 +243,6 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     }
   }
 
-  /**
-   * 提交查询。
-   */
   async function submit_query(): Promise<void> {
     if (!query.trim()) {
       return;
@@ -253,9 +260,6 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     }
   }
 
-  /**
-   * 创建手工图边。
-   */
   async function create_edge(): Promise<void> {
     if (!source_node_id || !target_node_id || source_node_id === target_node_id) {
       set_error('请先选择两个不同的节点，再创建手工连边。');
@@ -271,9 +275,6 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     }
   }
 
-  /**
-   * 删除当前选中的手工边。
-   */
   async function remove_selected_edge(): Promise<void> {
     if (!selected_edge || selected_edge.type !== 'manual') {
       return;
@@ -289,29 +290,51 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     }
   }
 
-  /**
-   * 选中图谱节点。
-   *
-   * @param node - 被选中的图节点。
-   */
+  async function save_model_configuration(payload: ModelConfigurationUpdateRequest): Promise<void> {
+    set_is_model_config_saving(true);
+    set_error(null);
+    try {
+      const response: ModelConfiguration = await update_model_configuration(payload);
+      set_model_configuration(response);
+      set_model_configuration_test_result(null);
+      write_model_configuration_cache(response);
+      if (response.reindex_required) {
+        set_query_result(null);
+        await refresh_graph(selected_document_id, include_chunks);
+      }
+      set_message(response.notice ?? '模型配置已保存，新的导入与问答会使用最新设置。');
+    } catch (request_error) {
+      set_error((request_error as Error).message);
+    } finally {
+      set_is_model_config_saving(false);
+    }
+  }
+
+  async function run_model_configuration_test(payload: ModelConfigurationTestRequest): Promise<void> {
+    set_is_model_config_testing(true);
+    set_error(null);
+    try {
+      const response: ModelConfigurationTestResult = await test_model_configuration(payload);
+      set_model_configuration_test_result(response);
+      set_message(response.message);
+    } catch (request_error) {
+      set_model_configuration_test_result(null);
+      set_error((request_error as Error).message);
+    } finally {
+      set_is_model_config_testing(false);
+    }
+  }
+
   function select_node(node: GraphNodeRecord): void {
     set_selected_node(node);
     set_selected_edge(null);
   }
 
-  /**
-   * 选中图谱边。
-   *
-   * @param edge - 被选中的图边。
-   */
   function select_edge(edge: GraphEdgeRecord): void {
     set_selected_edge(edge);
     set_selected_node(null);
   }
 
-  /**
-   * 清空当前图谱选中项。
-   */
   function clear_selection(): void {
     set_selected_node(null);
     set_selected_edge(null);
@@ -324,9 +347,14 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     documents,
     jobs,
     graph,
+    model_configuration,
+    model_configuration_test_result,
     selected_document_id,
     include_chunks,
     is_graph_loading,
+    is_model_config_loading,
+    is_model_config_saving,
+    is_model_config_testing,
     selected_node,
     selected_edge,
     source_node_id,
@@ -351,5 +379,7 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     submit_query,
     create_edge,
     remove_selected_edge,
+    save_model_configuration,
+    run_model_configuration_test,
   };
 }

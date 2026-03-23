@@ -1,0 +1,19 @@
+{
+  "include": [
+    "main.py",
+    "src",
+    "tests"
+  ],
+  "venvPath": ".",
+  "venv": ".venv",
+  "executionEnvironments": [
+    {
+      "root": ".",
+      "extraPaths": [
+        "."
+      ]
+    }
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic"
+}

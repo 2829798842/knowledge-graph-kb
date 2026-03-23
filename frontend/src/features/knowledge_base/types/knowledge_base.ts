@@ -1,16 +1,11 @@
 /**
- * 模块名称：features/knowledge_base/types/knowledge_base
- * 主要功能：定义知识库前端使用的文档、任务、图谱与查询数据结构。
+ * 知识库工作台共享的前端数据结构。
  */
 
-/**
- * 导入任务状态。
- */
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type ApiKeySource = 'saved' | 'environment' | 'none';
+export type ModelProvider = 'openai' | 'openrouter' | 'siliconflow' | 'custom';
 
-/**
- * 文档记录。
- */
 export interface KnowledgeBaseDocument {
   id: string;
   filename: string;
@@ -23,9 +18,6 @@ export interface KnowledgeBaseDocument {
   updated_at: string;
 }
 
-/**
- * 任务记录。
- */
 export interface KnowledgeBaseJob {
   id: string;
   document_id: string;
@@ -35,9 +27,6 @@ export interface KnowledgeBaseJob {
   updated_at: string;
 }
 
-/**
- * 图谱节点。
- */
 export interface GraphNodeRecord {
   id: string;
   type: string;
@@ -46,9 +35,6 @@ export interface GraphNodeRecord {
   metadata: Record<string, unknown>;
 }
 
-/**
- * 图谱边。
- */
 export interface GraphEdgeRecord {
   id: string;
   source: string;
@@ -58,17 +44,11 @@ export interface GraphEdgeRecord {
   metadata: Record<string, unknown>;
 }
 
-/**
- * 图谱载荷。
- */
 export interface GraphPayload {
   nodes: GraphNodeRecord[];
   edges: GraphEdgeRecord[];
 }
 
-/**
- * 引用记录。
- */
 export interface CitationRecord {
   chunk_id: string;
   document_id: string;
@@ -78,12 +58,49 @@ export interface CitationRecord {
   score: number;
 }
 
-/**
- * 查询结果。
- */
 export interface QueryResult {
   answer: string;
   citations: CitationRecord[];
   ranked_nodes: GraphNodeRecord[];
   ranked_edges: GraphEdgeRecord[];
+}
+
+export interface ModelConfiguration {
+  provider: ModelProvider;
+  base_url: string;
+  llm_model: string;
+  embedding_model: string;
+  has_api_key: boolean;
+  api_key_preview: string | null;
+  api_key_source: ApiKeySource;
+  reindex_required: boolean;
+  notice: string | null;
+}
+
+export interface ModelConfigurationUpdateRequest {
+  provider: ModelProvider;
+  base_url: string;
+  llm_model: string;
+  embedding_model: string;
+  api_key?: string;
+  clear_api_key?: boolean;
+}
+
+export interface ModelConfigurationTestRequest {
+  provider: ModelProvider;
+  base_url: string;
+  llm_model: string;
+  embedding_model: string;
+  api_key?: string;
+  use_saved_api_key?: boolean;
+}
+
+export interface ModelConfigurationTestResult {
+  provider: ModelProvider;
+  base_url: string;
+  llm_model: string;
+  embedding_model: string;
+  llm_ok: boolean;
+  embedding_ok: boolean;
+  message: string;
 }

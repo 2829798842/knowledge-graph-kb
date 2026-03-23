@@ -3,10 +3,9 @@
 主要功能：验证查询服务会将手工边纳入个性化 PageRank 排序结果。
 """
 
-from kb_graph.config import Settings
-from kb_graph.data.models import Chunk, GraphEdge, GraphNode, NodeType
-from kb_graph.services.query_service import QueryService
-from kb_graph.services.vector_store_service import VectorSearchResult
+from src.config import Settings
+from src.data import Chunk, GraphEdge, GraphNode, NodeType
+from src.services import QueryService, VectorSearchResult
 
 
 class FakeOpenAiService:

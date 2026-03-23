@@ -3,8 +3,8 @@
  * 主要功能：提供前端应用根入口，并挂载全局主题状态。
  */
 
-import { KnowledgeBaseWorkspace } from './features/knowledge_base/components/knowledge_base_workspace';
-import { use_theme_mode } from './theme/use_theme_mode';
+import { KnowledgeBaseWorkspace } from './features/knowledge_base';
+import { use_theme_mode } from './theme';
 
 /**
  * 渲染应用首页。

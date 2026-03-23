@@ -24,16 +24,23 @@ def configured_env(monkeypatch: pytest.MonkeyPatch, tmp_path):
     """
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{(tmp_path / 'app.db').as_posix()}")
-    monkeypatch.setenv("LANCEDB_PATH", str((tmp_path / "lancedb").resolve()))
+    monkeypatch.setenv("VECTOR_STORE_DIR", str((tmp_path / "faiss").resolve()))
     monkeypatch.setenv("UPLOAD_DIR", str((tmp_path / "uploads").resolve()))
+    monkeypatch.setenv("MODEL_CONFIG_SECRET_PATH", str((tmp_path / "secrets" / "model_config.key").resolve()))
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    frontend_dist_dir: Path = (tmp_path / "frontend-dist").resolve()
+    frontend_dist_dir.mkdir(parents=True, exist_ok=True)
+    (frontend_dist_dir / "index.html").write_text(
+        "<!doctype html><html><head><title>Test Frontend</title></head><body><div id='root'></div></body></html>",
+        encoding="utf-8",
+    )
     monkeypatch.setenv(
         "FRONTEND_DIST_DIR",
-        str((Path(__file__).resolve().parents[1] / "frontend" / "dist").resolve()),
+        str(frontend_dist_dir),
     )
 
-    from kb_graph.config import get_settings
-    from kb_graph.data.database import get_engine
+    from src.config import get_settings
+    from src.data import get_engine
 
     get_settings.cache_clear()
     get_engine.cache_clear()
@@ -53,7 +60,7 @@ def client(configured_env) -> Iterator[TestClient]:
         Iterator[TestClient]: FastAPI 测试客户端。
     """
 
-    from kb_graph.app_factory import create_app
+    from src.app_factory import create_app
 
     app = create_app()
     with TestClient(app) as test_client:
@@ -71,7 +78,7 @@ def session(configured_env) -> Iterator[Session]:
         Iterator[Session]: 数据库会话对象。
     """
 
-    from kb_graph.data.database import get_engine, init_db
+    from src.data import get_engine, init_db
 
     init_db()
     with Session(get_engine()) as db_session:

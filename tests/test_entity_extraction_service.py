@@ -3,8 +3,8 @@
 主要功能：验证实体抽取服务会按窗口抽取并对多批结果进行去重聚合。
 """
 
-from kb_graph.contracts.extraction_contracts import ExtractionResult, ExtractedEntity, ExtractedRelation
-from kb_graph.services.entity_extraction_service import EntityExtractionService
+from src.schemas import ExtractionResult, ExtractedEntity, ExtractedRelation
+from src.services import EntityExtractionService
 
 
 class FakeOpenAiService:

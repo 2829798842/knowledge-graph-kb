@@ -3,7 +3,7 @@
 主要功能：验证文本切块服务的 token 统计与重叠切块行为。
 """
 
-from kb_graph.services.chunking_service import count_tokens, split_text
+from src.services.chunking_service import count_tokens, split_text
 
 
 def test_split_text_creates_overlapping_chunks():

@@ -8,8 +8,9 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "cryptography>=45.0.0",
     "fastapi>=0.116.1",
-    "lancedb==0.29.2",
+    "faiss-cpu>=1.13.2",
     "networkx>=3.5",
     "numpy>=2.3.3",
     "openai>=1.108.1",
@@ -23,7 +24,7 @@ dependencies = [
 ]
 
 [project.scripts]
-knowledge-graph-kb = "kb_graph.main:cli"
+knowledge-graph-kb = "main:cli"
 
 [dependency-groups]
 dev = [
@@ -32,8 +33,12 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.uv.build-backend]
+module-name = "src"
+module-root = ""
 
 [build-system]
 requires = ["uv_build>=0.8.4,<0.9.0"]

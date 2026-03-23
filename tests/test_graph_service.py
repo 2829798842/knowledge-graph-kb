@@ -3,7 +3,7 @@
 主要功能：验证图谱服务中的实体命中规则能避免短词误匹配。
 """
 
-from kb_graph.services.graph_service import chunk_mentions_entity
+from src.services.graph_service import chunk_mentions_entity
 
 
 def test_chunk_mentions_entity_respects_word_boundaries():

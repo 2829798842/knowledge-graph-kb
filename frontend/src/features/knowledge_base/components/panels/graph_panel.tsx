@@ -5,11 +5,11 @@
 
 import { Suspense, lazy } from 'react';
 
-import type { ResolvedTheme } from '../../../../theme/theme_types';
+import type { ResolvedTheme } from '../../../../theme';
 import type { GraphEdgeRecord, GraphNodeRecord, GraphPayload } from '../../types/knowledge_base';
 
 const GraphCanvas = lazy(async () => {
-  const module = await import('../graph_canvas/graph_canvas');
+  const module = await import('../graph_canvas');
   return { default: module.GraphCanvas };
 });
 

@@ -224,6 +224,12 @@ button:disabled {
   margin-top: 22px;
 }
 
+.panel-stack {
+  display: grid;
+  gap: 20px;
+  align-content: start;
+}
+
 .panel {
   padding: 20px;
   border-radius: 24px;
@@ -449,6 +455,22 @@ button:disabled {
   gap: 8px;
 }
 
+.form-stack,
+.form-field {
+  display: grid;
+  gap: 8px;
+}
+
+.form-field input,
+.form-field select {
+  width: 100%;
+  border: 1px solid var(--field-border);
+  border-radius: 14px;
+  padding: 10px 12px;
+  background: var(--field-surface);
+  color: var(--text-primary);
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
@@ -477,6 +499,33 @@ button:disabled {
 .highlight-summary {
   margin: 12px 0 0;
   color: var(--highlight-text);
+}
+
+.helper-text,
+.panel-note {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.panel-note {
+  padding: 12px 14px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--accent-ghost-bg) 72%, transparent);
+}
+
+.panel-note strong,
+.panel-note span {
+  display: block;
+}
+
+.panel-note-success {
+  background: rgba(21, 131, 118, 0.12);
+  color: var(--text-primary);
+}
+
+.panel-note-warning {
+  background: rgba(191, 110, 44, 0.14);
+  color: var(--text-primary);
 }
 
 .query-form textarea {

@@ -3,7 +3,7 @@
 主要功能：验证图谱接口中的手工边创建、查询与删除流程。
 """
 
-from kb_graph.data.models import GraphNode, NodeType
+from src.data import GraphNode, NodeType
 
 
 def test_manual_edge_crud_and_graph_response(client, session):

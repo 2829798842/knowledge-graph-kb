@@ -53,11 +53,11 @@ def test_missing_frontend_dist_returns_guidance(
     missing_frontend_dist_dir: Path = tmp_path / "missing-frontend-dist"
     monkeypatch.setenv("FRONTEND_DIST_DIR", str(missing_frontend_dist_dir))
 
-    from kb_graph.config import get_settings
+    from src.config import get_settings
 
     get_settings.cache_clear()
 
-    from kb_graph.app_factory import create_app
+    from src.app_factory import create_app
 
     with TestClient(create_app()) as test_client:
         response = test_client.get("/")

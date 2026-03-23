@@ -1,33 +1,27 @@
-import sys
-from pathlib import Path
+"""集成后端服务的项目入口。"""
 
-PROJECT_ROOT: Path = Path(__file__).resolve().parent
-SRC_DIR: Path = PROJECT_ROOT / "src"
+import uvicorn
 
+from src import create_app
+from src.config import Settings, get_settings
 
-def bootstrap_src_path() -> None:
-    """将 `src` 目录加入模块搜索路径。
-
-    Returns:
-        None
-    """
-
-    src_path: str = str(SRC_DIR)
-    if src_path not in sys.path:
-        sys.path.insert(0, src_path)
+app = create_app()
 
 
-bootstrap_src_path()
+def cli() -> None:
+    """按配置的主机和端口启动应用。"""
 
-from kb_graph.main import cli  # noqa: E402
+    settings: Settings = get_settings()
+    uvicorn.run(
+        "main:app",
+        host=settings.server_host,
+        port=settings.server_port,
+        reload=False,
+    )
 
 
 def main() -> None:
-    """启动知识库一体化服务。
-
-    Returns:
-        None
-    """
+    """运行命令行入口。"""
 
     cli()
 

@@ -1,39 +1,32 @@
 /**
- * 模块名称：features/knowledge_base/components/knowledge_base_workspace
- * 主要功能：组装知识库功能域的状态横幅、导入面板、图谱面板与问答面板。
+ * 组合知识库界面的主工作区。
  */
 
-import type { ResolvedTheme, ThemeMode } from '../../../theme/theme_types';
+import type { ResolvedTheme, ThemeMode } from '../../../theme';
 import { use_knowledge_base } from '../hooks/use_knowledge_base';
-import { GraphPanel } from './panels/graph_panel';
-import { ImportPanel } from './panels/import_panel';
-import { QueryPanel } from './panels/query_panel';
-import { StatusBanner } from './status_banner/status_banner';
+import { GraphPanel, ImportPanel, ModelConfigPanel, QueryPanel } from './panels';
+import { StatusBanner } from './status_banner';
 
-/**
- * 知识库工作区属性。
- */
 interface KnowledgeBaseWorkspaceProps {
   theme_mode: ThemeMode;
   resolved_theme: ResolvedTheme;
   set_theme_mode: (theme_mode: ThemeMode) => void;
 }
 
-/**
- * 渲染知识库工作区。
- *
- * @param props - 组件属性。
- * @returns 知识库工作区组件。
- */
 export function KnowledgeBaseWorkspace(props: KnowledgeBaseWorkspaceProps) {
   const { theme_mode, resolved_theme, set_theme_mode } = props;
   const {
     documents,
     jobs,
     graph,
+    model_configuration,
+    model_configuration_test_result,
     selected_document_id,
     include_chunks,
     is_graph_loading,
+    is_model_config_loading,
+    is_model_config_saving,
+    is_model_config_testing,
     selected_node,
     selected_edge,
     source_node_id,
@@ -58,6 +51,8 @@ export function KnowledgeBaseWorkspace(props: KnowledgeBaseWorkspaceProps) {
     submit_query,
     create_edge,
     remove_selected_edge,
+    save_model_configuration,
+    run_model_configuration_test,
   } = use_knowledge_base();
 
   return (
@@ -75,16 +70,28 @@ export function KnowledgeBaseWorkspace(props: KnowledgeBaseWorkspaceProps) {
       />
 
       <section className='workspace-grid'>
-        <ImportPanel
-          documents={documents}
-          jobs={jobs}
-          selected_document_id={selected_document_id}
-          include_chunks={include_chunks}
-          is_uploading={is_uploading}
-          set_selected_document_id={set_selected_document_id}
-          set_include_chunks={set_include_chunks}
-          upload_file={upload_file}
-        />
+        <div className='panel-stack'>
+          <ImportPanel
+            documents={documents}
+            jobs={jobs}
+            selected_document_id={selected_document_id}
+            include_chunks={include_chunks}
+            is_uploading={is_uploading}
+            set_selected_document_id={set_selected_document_id}
+            set_include_chunks={set_include_chunks}
+            upload_file={upload_file}
+          />
+
+          <ModelConfigPanel
+            model_configuration={model_configuration}
+            model_configuration_test_result={model_configuration_test_result}
+            is_loading={is_model_config_loading}
+            is_saving={is_model_config_saving}
+            is_testing={is_model_config_testing}
+            save_model_configuration={save_model_configuration}
+            test_model_configuration={run_model_configuration_test}
+          />
+        </div>
 
         <GraphPanel
           graph={graph}
