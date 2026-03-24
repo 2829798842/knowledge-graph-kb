@@ -1,5 +1,6 @@
 /**
- * 知识库工作台顶部状态横幅。
+ * 模块名称：features/knowledge_base/components/status_banner
+ * 主要功能：渲染知识库工作台顶部状态横幅。
  */
 
 import type { ThemeMode } from '../../../theme';
@@ -33,9 +34,9 @@ export function StatusBanner(props: StatusBannerProps) {
     <section className='hero'>
       <div>
         <p className='eyebrow'>本地知识库工作台</p>
-        <h1>导入文档、查看连接，并直接向知识图谱提问。</h1>
+        <h1>上传文档，手动开始抽取，然后直接向知识图谱提问。</h1>
         <p className='hero-copy'>
-          这个工作区会把向量检索、实体关系抽取和图谱排序组合起来，把个人文档整理成可检索、可追溯的知识地图。
+          这个工作区把自然分段、向量检索、实体关系抽取和图谱排序串起来，让文档从“文件”变成可浏览、可追溯、可问答的知识结构。
         </p>
       </div>
       <div className='hero-status'>
@@ -67,7 +68,7 @@ export function StatusBanner(props: StatusBannerProps) {
         </div>
 
         <div>
-          <span className='status-label'>状态</span>
+          <span className='status-label'>当前状态</span>
           <strong>{message}</strong>
           {error ? <p className='error-message'>{error}</p> : null}
         </div>

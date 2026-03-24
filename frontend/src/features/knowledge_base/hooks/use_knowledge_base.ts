@@ -1,5 +1,6 @@
 /**
- * Workspace state management for the knowledge base UI.
+ * 模块名称：features/knowledge_base/hooks/use_knowledge_base
+ * 主要功能：管理知识库工作台的前端状态、任务轮询与数据同步。
  */
 
 import { useEffect, useMemo, useState } from 'react';
@@ -10,8 +11,10 @@ import {
   fetch_documents,
   fetch_graph,
   fetch_job,
+  fetch_jobs,
   fetch_model_configuration,
   run_query,
+  start_document_extraction as request_document_extraction,
   test_model_configuration,
   update_model_configuration,
   upload_document,
@@ -39,7 +42,7 @@ import {
   write_model_configuration_cache,
   write_workspace_preferences,
 } from '../utils/cache_utils';
-import { create_pending_job, get_active_job_ids, merge_jobs } from '../utils/job_utils';
+import { get_active_job_ids, merge_jobs } from '../utils/job_utils';
 
 export interface UseKnowledgeBaseResult {
   documents: KnowledgeBaseDocument[];
@@ -53,6 +56,8 @@ export interface UseKnowledgeBaseResult {
   is_model_config_loading: boolean;
   is_model_config_saving: boolean;
   is_model_config_testing: boolean;
+  is_starting_extraction: boolean;
+  starting_document_id: string | null;
   selected_node: GraphNodeRecord | null;
   selected_edge: GraphEdgeRecord | null;
   source_node_id: string;
@@ -74,6 +79,7 @@ export interface UseKnowledgeBaseResult {
   select_edge: (edge: GraphEdgeRecord) => void;
   clear_selection: () => void;
   upload_file: (file: File) => Promise<void>;
+  start_document_extraction: (document_id?: string | null) => Promise<void>;
   submit_query: () => Promise<void>;
   create_edge: () => Promise<void>;
   remove_selected_edge: () => Promise<void>;
@@ -104,6 +110,8 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
   const [is_model_config_loading, set_is_model_config_loading] = useState<boolean>(false);
   const [is_model_config_saving, set_is_model_config_saving] = useState<boolean>(false);
   const [is_model_config_testing, set_is_model_config_testing] = useState<boolean>(false);
+  const [is_starting_extraction, set_is_starting_extraction] = useState<boolean>(false);
+  const [starting_document_id, set_starting_document_id] = useState<string | null>(null);
   const [selected_node, set_selected_node] = useState<GraphNodeRecord | null>(null);
   const [selected_edge, set_selected_edge] = useState<GraphEdgeRecord | null>(null);
   const [source_node_id, set_source_node_id] = useState<string>('');
@@ -122,6 +130,7 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
 
   useEffect(() => {
     void refresh_documents();
+    void refresh_jobs();
     void refresh_model_configuration();
   }, []);
 
@@ -168,6 +177,15 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     }
   }
 
+  async function refresh_jobs(): Promise<void> {
+    try {
+      const response: KnowledgeBaseJob[] = await fetch_jobs();
+      set_jobs(response);
+    } catch (request_error) {
+      set_error((request_error as Error).message);
+    }
+  }
+
   async function refresh_graph(document_id: string | null, next_include_chunks: boolean): Promise<void> {
     set_is_graph_loading(true);
     try {
@@ -209,14 +227,21 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
       const failed_job: KnowledgeBaseJob | undefined = next_jobs.find((job) => job.status === 'failed');
       if (failed_job?.error_message) {
         set_error(failed_job.error_message);
-      } else if (next_jobs.some((job) => job.status === 'processing')) {
-        set_message('文档正在索引中，图谱会在处理完成后自动刷新。');
-      } else if (next_jobs.some((job) => job.status === 'completed')) {
-        set_message('新的图谱数据已经准备好，可以继续浏览或提问。');
+      }
+
+      const processing_job: KnowledgeBaseJob | undefined = next_jobs.find((job) => job.status === 'processing');
+      if (processing_job?.status_message) {
+        set_message(processing_job.status_message);
+      }
+
+      const completed_job: KnowledgeBaseJob | undefined = next_jobs.find((job) => job.status === 'completed');
+      if (completed_job?.status_message) {
+        set_message(completed_job.status_message);
       }
 
       if (next_jobs.some((job) => job.status === 'completed' || job.status === 'failed')) {
         await refresh_documents();
+        await refresh_jobs();
         await refresh_graph(selected_document_id, include_chunks);
       }
     } catch (request_error) {
@@ -229,17 +254,39 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     set_error(null);
     try {
       const response = await upload_document(file);
-      set_jobs((current_jobs) =>
-        merge_jobs(current_jobs, [create_pending_job(response.job_id, response.document_id)]),
-      );
       set_selected_document_id(response.document_id);
-      set_message(`已导入《${file.name}》，后台索引任务已经启动。`);
+      set_message(`已上传《${file.name}》，请点击“开始 LLM 抽取”继续处理。`);
       await refresh_documents();
+      await refresh_jobs();
       await refresh_graph(response.document_id, include_chunks);
     } catch (request_error) {
       set_error((request_error as Error).message);
     } finally {
       set_is_uploading(false);
+    }
+  }
+
+  async function start_document_extraction(document_id?: string | null): Promise<void> {
+    const target_document_id: string | null = document_id ?? selected_document_id;
+    if (!target_document_id) {
+      set_error('请先选择一个文档，再开始抽取。');
+      return;
+    }
+
+    set_is_starting_extraction(true);
+    set_starting_document_id(target_document_id);
+    set_error(null);
+    try {
+      const job: KnowledgeBaseJob = await request_document_extraction(target_document_id);
+      set_jobs((current_jobs) => merge_jobs(current_jobs, [job]));
+      set_message(job.status_message ?? '抽取任务已启动，处理进度会在下方实时更新。');
+      await refresh_documents();
+      await refresh_jobs();
+    } catch (request_error) {
+      set_error((request_error as Error).message);
+    } finally {
+      set_is_starting_extraction(false);
+      set_starting_document_id(null);
     }
   }
 
@@ -252,7 +299,7 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     try {
       const result: QueryResult = await run_query(query, selected_document_id ? [selected_document_id] : undefined);
       set_query_result(result);
-      set_message('图谱排序已根据本次提问完成更新，高亮路径也已同步。');
+      set_message('图谱排序已根据本次提问更新，高亮路径也已同步。');
     } catch (request_error) {
       set_error((request_error as Error).message);
     } finally {
@@ -355,6 +402,8 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     is_model_config_loading,
     is_model_config_saving,
     is_model_config_testing,
+    is_starting_extraction,
+    starting_document_id,
     selected_node,
     selected_edge,
     source_node_id,
@@ -376,6 +425,7 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     select_edge,
     clear_selection,
     upload_file,
+    start_document_extraction,
     submit_query,
     create_edge,
     remove_selected_edge,

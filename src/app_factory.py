@@ -1,6 +1,5 @@
-"""模块名称：app_factory
-
-主要功能：按应用工厂模式创建 FastAPI 实例并组装 API、生命周期与前端静态资源。
+"""
+按应用工厂模式创建 FastAPI 实例并组装 API、生命周期与前端静态资源。
 """
 
 from contextlib import asynccontextmanager
@@ -39,6 +38,8 @@ def create_app() -> FastAPI:
     """
 
     settings: Settings = get_settings()
+    ensure_app_dirs(settings)
+    init_db()
     app = FastAPI(title=settings.app_name, lifespan=lifespan)
     app.add_middleware(
         CORSMiddleware,

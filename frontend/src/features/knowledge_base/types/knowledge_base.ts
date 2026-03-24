@@ -1,8 +1,10 @@
 /**
- * 知识库工作台共享的前端数据结构。
+ * 模块名称：features/knowledge_base/types/knowledge_base
+ * 主要功能：定义知识库工作台共享的前端数据结构。
  */
 
 export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type DocumentStatus = 'queued' | 'processing' | 'ready' | 'failed';
 export type ApiKeySource = 'saved' | 'environment' | 'none';
 export type ModelProvider = 'openai' | 'openrouter' | 'siliconflow' | 'custom';
 
@@ -11,7 +13,7 @@ export interface KnowledgeBaseDocument {
   filename: string;
   original_name: string;
   file_type: string;
-  status: string;
+  status: DocumentStatus;
   summary: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
@@ -22,6 +24,9 @@ export interface KnowledgeBaseJob {
   id: string;
   document_id: string;
   status: JobStatus;
+  progress_percent: number;
+  stage: string;
+  status_message: string | null;
   error_message: string | null;
   created_at: string;
   updated_at: string;

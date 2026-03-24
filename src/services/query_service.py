@@ -1,9 +1,8 @@
-"""模块名称：services.query_service
-
-主要功能：执行向量召回、个性化 PageRank 重排并生成最终问答结果。
+"""执行向量召回、个性化 PageRank 重排并生成最终问答结果。
 """
 
 from collections import deque
+from typing import Any
 
 import networkx as nx
 from sqlmodel import Session, select
@@ -78,8 +77,8 @@ class QueryService:
         if not seed_results:
             return QueryResponse(answer="No indexed chunks matched the query yet.", citations=[], ranked_nodes=[], ranked_edges=[])
 
-        graph_nodes: list[GraphNode] = session.exec(select(GraphNode)).all()
-        graph_edges: list[GraphEdge] = session.exec(select(GraphEdge)).all()
+        graph_nodes: list[GraphNode] = list(session.exec(select(GraphNode)).all())
+        graph_edges: list[GraphEdge] = list(session.exec(select(GraphEdge)).all())
         graph = self._build_graph(graph_nodes, graph_edges)
         subgraph = self._seeded_subgraph(graph, [result.node_id for result in seed_results], depth=SUBGRAPH_EXPANSION_DEPTH)
 
@@ -111,7 +110,10 @@ class QueryService:
         selected_chunk_node_ids: list[str] = candidate_chunk_node_ids[
             : max(1, min(top_k, self.settings.query_context_chunks))
         ]
-        chunk_rows: list[Chunk] = session.exec(select(Chunk).where(Chunk.node_id.in_(selected_chunk_node_ids))).all()
+        chunk_node_column: Any = Chunk.node_id
+        chunk_rows: list[Chunk] = list(
+            session.exec(select(Chunk).where(chunk_node_column.in_(selected_chunk_node_ids))).all()
+        )
         chunk_map: dict[str, Chunk] = {chunk.node_id: chunk for chunk in chunk_rows}
 
         citations: list[CitationRead] = []
@@ -199,7 +201,7 @@ class QueryService:
                     continue
                 visited.add(neighbor)
                 queue.append((neighbor, level + 1))
-        return graph.subgraph(visited).copy()
+        return nx.DiGraph(graph.subgraph(visited))
 
     def _personalized_pagerank(
         self,

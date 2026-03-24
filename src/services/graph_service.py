@@ -1,8 +1,5 @@
-"""模块名称：services.graph_service
-
-主要功能：提供图节点与图边维护、语义连边构建以及图谱响应组装能力。
+"""提供图节点与图边维护、语义连边构建以及图谱响应组装能力。
 """
-
 import re
 from typing import Any, Iterable
 

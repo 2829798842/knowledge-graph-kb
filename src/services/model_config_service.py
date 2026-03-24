@@ -1,7 +1,4 @@
 """负责模型配置的持久化与运行期解析。"""
-
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Final
 

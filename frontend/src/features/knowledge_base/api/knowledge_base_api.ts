@@ -1,5 +1,6 @@
 /**
- * 知识库工作台的后端 API 调用辅助函数。
+ * 模块名称：features/knowledge_base/api/knowledge_base_api
+ * 主要功能：封装知识库工作台使用的后端 API 调用。
  */
 
 import {
@@ -39,6 +40,10 @@ export function fetch_documents(): Promise<KnowledgeBaseDocument[]> {
   return request_json<KnowledgeBaseDocument[]>('/api/documents');
 }
 
+export function fetch_jobs(): Promise<KnowledgeBaseJob[]> {
+  return request_json<KnowledgeBaseJob[]>('/api/jobs');
+}
+
 export function fetch_graph(document_id?: string | null, include_chunks = true): Promise<GraphPayload> {
   const search_params: URLSearchParams = new URLSearchParams();
   if (document_id) {
@@ -76,12 +81,18 @@ export function update_model_configuration(
   });
 }
 
-export async function upload_document(file: File): Promise<{ job_id: string; document_id: string }> {
+export async function upload_document(file: File): Promise<{ job_id: string | null; document_id: string }> {
   const form_data: FormData = new FormData();
   form_data.append('file', file);
-  return request_json<{ job_id: string; document_id: string }>('/api/files/import', {
+  return request_json<{ job_id: string | null; document_id: string }>('/api/files/import', {
     method: 'POST',
     body: form_data,
+  });
+}
+
+export function start_document_extraction(document_id: string): Promise<KnowledgeBaseJob> {
+  return request_json<KnowledgeBaseJob>(`/api/documents/${document_id}/extract`, {
+    method: 'POST',
   });
 }
 

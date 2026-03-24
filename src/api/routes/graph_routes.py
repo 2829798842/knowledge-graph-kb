@@ -1,6 +1,4 @@
-"""模块名称：api.routes.graph_routes
-
-主要功能：提供图谱查询、手工连边创建与删除接口。
+"""提供图谱查询、手工连边创建与删除接口。
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query

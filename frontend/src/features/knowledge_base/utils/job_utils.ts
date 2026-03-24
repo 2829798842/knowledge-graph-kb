@@ -1,28 +1,9 @@
 /**
  * 模块名称：features/knowledge_base/utils/job_utils
- * 主要功能：提供任务轮询、合并与占位任务创建的辅助函数。
+ * 主要功能：提供任务轮询、合并与按文档检索最新任务的辅助函数。
  */
 
 import type { KnowledgeBaseJob } from '../types/knowledge_base';
-
-/**
- * 创建新上传文件对应的待处理任务。
- *
- * @param job_id - 任务标识。
- * @param document_id - 文档标识。
- * @returns 前端本地任务占位对象。
- */
-export function create_pending_job(job_id: string, document_id: string): KnowledgeBaseJob {
-  const created_at: string = new Date().toISOString();
-  return {
-    id: job_id,
-    document_id,
-    status: 'pending',
-    error_message: null,
-    created_at,
-    updated_at: created_at,
-  };
-}
 
 /**
  * 获取当前仍需轮询的任务标识列表。
@@ -50,4 +31,23 @@ export function merge_jobs(
   const job_map: Map<string, KnowledgeBaseJob> = new Map<string, KnowledgeBaseJob>();
   [...current_jobs, ...next_jobs].forEach((job) => job_map.set(job.id, job));
   return [...job_map.values()].sort((left, right) => right.created_at.localeCompare(left.created_at));
+}
+
+/**
+ * 获取某个文档最近一次任务。
+ *
+ * @param jobs - 当前任务列表。
+ * @param document_id - 文档标识。
+ * @returns 最近一次任务；若不存在则返回 `null`。
+ */
+export function get_latest_job_for_document(
+  jobs: KnowledgeBaseJob[],
+  document_id: string,
+): KnowledgeBaseJob | null {
+  const matched_jobs: KnowledgeBaseJob[] = jobs.filter((job) => job.document_id === document_id);
+  if (!matched_jobs.length) {
+    return null;
+  }
+  matched_jobs.sort((left, right) => right.created_at.localeCompare(left.created_at));
+  return matched_jobs[0];
 }

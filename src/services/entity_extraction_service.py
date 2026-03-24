@@ -1,8 +1,5 @@
-"""模块名称：services.entity_extraction_service
-
-主要功能：按窗口批量调用 LLM 做实体关系抽取，并对多批结果去重聚合。
+"""按窗口批量调用 LLM 做实体关系抽取，并对多批结果去重聚合。
 """
-
 from src.data import normalize_entity_name
 from src.schemas import ExtractionResult, ExtractedEntity, ExtractedRelation
 from src.services.openai_service import OpenAiService

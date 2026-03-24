@@ -1,6 +1,6 @@
 """模块名称：api.routes.document_routes
 
-主要功能：提供文件导入、任务查询与文档列表相关接口。
+主要功能：提供文件上传、手动开始抽取、任务查询与文档列表接口。
 """
 
 from pathlib import Path
@@ -11,7 +11,15 @@ from sqlmodel import Session, select
 
 from src.api.dependencies import get_ingestion_service
 from src.config import get_settings
-from src.data import Document, DocumentStatus, IngestionJob, JobStatus, get_engine, get_session
+from src.data import (
+    Document,
+    DocumentStatus,
+    IngestionJob,
+    JobStatus,
+    get_engine,
+    get_session,
+    utc_now,
+)
 from src.schemas.api import DocumentRead, FileImportResponse, JobRead
 from src.services import IngestionService
 from src.services.graph_service import seed_document_node
@@ -23,19 +31,17 @@ router = APIRouter(prefix="/api", tags=["documents"])
 
 @router.post("/files/import", response_model=FileImportResponse)
 async def import_file(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     session: Session = Depends(get_session),
 ) -> FileImportResponse:
-    """上传文件并创建导入任务。
+    """上传文件并创建文档记录。
 
     Args:
-        background_tasks: FastAPI 后台任务管理器。
         file: 上传文件对象。
         session: 数据库会话。
 
     Returns:
-        FileImportResponse: 新建的任务与文档标识。
+        FileImportResponse: 已创建的文档标识。
 
     Raises:
         HTTPException: 当文件类型不受支持时抛出。
@@ -62,14 +68,76 @@ async def import_file(
         status=DocumentStatus.QUEUED,
         metadata_json={"size_bytes": len(contents)},
     )
-    job = IngestionJob(document_id=document.id, status=JobStatus.PENDING)
     session.add(document)
-    session.add(job)
     seed_document_node(session, document)
     session.commit()
 
+    return FileImportResponse(job_id=None, document_id=document.id)
+
+
+@router.post("/documents/{document_id}/extract", response_model=JobRead)
+def start_document_extraction(
+    document_id: str,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+) -> JobRead:
+    """为指定文档启动一次抽取任务。
+
+    Args:
+        document_id: 文档主键。
+        background_tasks: FastAPI 后台任务管理器。
+        session: 数据库会话。
+
+    Returns:
+        JobRead: 已创建或已存在的活动任务详情。
+
+    Raises:
+        HTTPException: 当文档不存在时抛出。
+    """
+
+    document = session.get(Document, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    active_job = _find_active_job(session, document_id=document_id)
+    if active_job is not None:
+        return JobRead.model_validate(active_job)
+
+    updated_at = utc_now()
+    document.status = DocumentStatus.QUEUED
+    document.updated_at = updated_at
+    job = IngestionJob(
+        document_id=document.id,
+        status=JobStatus.PENDING,
+        progress_percent=0,
+        stage="queued",
+        status_message="等待开始抽取",
+        error_message=None,
+        updated_at=updated_at,
+    )
+    session.add(document)
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+
     background_tasks.add_task(run_ingestion_job, job.id, document.id)
-    return FileImportResponse(job_id=job.id, document_id=document.id)
+    return JobRead.model_validate(job)
+
+
+@router.get("/jobs", response_model=list[JobRead])
+def list_jobs(session: Session = Depends(get_session)) -> list[JobRead]:
+    """返回最近的导入任务列表。
+
+    Args:
+        session: 数据库会话。
+
+    Returns:
+        list[JobRead]: 按创建时间倒序排列的任务列表。
+    """
+
+    jobs: list[IngestionJob] = list(session.exec(select(IngestionJob)).all())
+    jobs.sort(key=lambda job: job.created_at, reverse=True)
+    return [JobRead.model_validate(job) for job in jobs[:30]]
 
 
 @router.get("/jobs/{job_id}", response_model=JobRead)
@@ -164,3 +232,24 @@ def run_ingestion_job(job_id: str, document_id: str) -> None:
     service: IngestionService = get_ingestion_service()
     with Session(get_engine()) as session:
         service.process_document(session, job_id=job_id, document_id=document_id)
+
+
+def _find_active_job(session: Session, *, document_id: str) -> IngestionJob | None:
+    """查找文档当前仍处于进行中的任务。
+
+    Args:
+        session: 数据库会话。
+        document_id: 文档主键。
+
+    Returns:
+        IngestionJob | None: 若存在活动任务则返回该任务，否则返回 `None`。
+    """
+
+    jobs: list[IngestionJob] = list(session.exec(select(IngestionJob).where(IngestionJob.document_id == document_id)).all())
+    active_jobs: list[IngestionJob] = [
+        job for job in jobs if job.status in {JobStatus.PENDING, JobStatus.PROCESSING}
+    ]
+    if not active_jobs:
+        return None
+    active_jobs.sort(key=lambda job: job.created_at, reverse=True)
+    return active_jobs[0]

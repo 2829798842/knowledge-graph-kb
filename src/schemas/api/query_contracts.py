@@ -1,8 +1,5 @@
-"""模块名称：contracts.api.query_contracts
-
-主要功能：定义问答检索请求、引用信息与排序结果契约。
+"""定义问答检索请求、引用信息与排序结果契约。
 """
-
 from pydantic import BaseModel
 
 from src.schemas.api.graph_contracts import GraphEdgeRead, GraphNodeRead

@@ -1,6 +1,4 @@
-"""模块名称：api.routes.system_routes
-
-主要功能：提供系统健康检查相关接口。
+"""提供系统健康检查相关接口。
 """
 
 from fastapi import APIRouter

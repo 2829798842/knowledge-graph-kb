@@ -1,5 +1,4 @@
 """封装兼容 OpenAI 的嵌入、抽取、问答与连通性测试调用。"""
-
 from __future__ import annotations
 
 import json
@@ -40,11 +39,19 @@ class OpenAiService:
             return []
 
         runtime_config: RuntimeModelConfiguration = self._runtime_configuration()
-        response = self._client_for(runtime_config).embeddings.create(
-            model=runtime_config.embedding_model,
-            input=texts,
-        )
-        return [[float(value) for value in item.embedding] for item in response.data]
+        client: OpenAI = self._client_for(runtime_config)
+        batch_size: int = max(1, self.settings.embedding_batch_size)
+        embeddings: list[list[float]] = []
+
+        for start_index in range(0, len(texts), batch_size):
+            batch_texts: list[str] = texts[start_index : start_index + batch_size]
+            response = client.embeddings.create(
+                model=runtime_config.embedding_model,
+                input=batch_texts,
+            )
+            embeddings.extend([[float(value) for value in item.embedding] for item in response.data])
+
+        return embeddings
 
     def extract_entities(
         self,
@@ -154,10 +161,13 @@ class OpenAiService:
             runtime_config.api_key,
         )
         if self._client is None or self._client_signature != signature:
-            client_kwargs: dict[str, str] = {"api_key": runtime_config.api_key}
             if runtime_config.base_url:
-                client_kwargs["base_url"] = runtime_config.base_url
-            self._client = OpenAI(**client_kwargs)
+                self._client = OpenAI(
+                    api_key=runtime_config.api_key,
+                    base_url=runtime_config.base_url,
+                )
+            else:
+                self._client = OpenAI(api_key=runtime_config.api_key)
             self._client_signature = signature
         return self._client
 

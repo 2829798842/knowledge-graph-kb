@@ -1,6 +1,6 @@
 /**
  * 模块名称：features/knowledge_base/components/panels/graph_panel
- * 主要功能：渲染图谱主视图、手工连边操作区和图谱摘要信息。
+ * 主要功能：渲染图谱主视图、手工连边区域和图谱摘要信息。
  */
 
 import { Suspense, lazy } from 'react';
@@ -13,9 +13,6 @@ const GraphCanvas = lazy(async () => {
   return { default: module.GraphCanvas };
 });
 
-/**
- * 图谱面板属性。
- */
 interface GraphPanelProps {
   graph: GraphPayload;
   is_graph_loading: boolean;
@@ -34,12 +31,6 @@ interface GraphPanelProps {
   create_edge: () => Promise<void>;
 }
 
-/**
- * 渲染图谱面板。
- *
- * @param props - 组件属性。
- * @returns 图谱面板组件。
- */
 export function GraphPanel(props: GraphPanelProps) {
   const {
     graph,
@@ -67,7 +58,7 @@ export function GraphPanel(props: GraphPanelProps) {
         <div className='section-title-row'>
           <div>
             <h2>知识图谱</h2>
-            <p>浏览文档、切块和实体节点。问答结果会高亮对应路径，并自动聚焦相关子图。</p>
+            <p>浏览文档、片段和实体节点。问答结果会高亮对应路径，并自动聚焦相关子图。</p>
           </div>
           <div className='graph-stat-grid'>
             <span className='graph-stat-pill'>节点 {graph.nodes.length}</span>
@@ -100,7 +91,7 @@ export function GraphPanel(props: GraphPanelProps) {
           <div className='section-title-row'>
             <div>
               <h3>手工连边</h3>
-              <p className='muted-text'>你手动建立的连接会参与后续个性化 PageRank 排序，用来强化真正重要的关系。</p>
+              <p className='muted-text'>你手动建立的连接会参与后续排序，用来强化真正重要的业务关系。</p>
             </div>
             <button className='ghost-button' type='button' onClick={clear_selection}>
               清空选中

@@ -8,9 +8,6 @@ import type { FormEvent } from 'react';
 import type { GraphEdgeRecord, GraphNodeRecord, QueryResult } from '../../types/knowledge_base';
 import { get_edge_type_label, get_node_type_label } from '../../utils/label_utils';
 
-/**
- * 查询面板属性。
- */
 interface QueryPanelProps {
   query: string;
   selected_node: GraphNodeRecord | null;
@@ -24,12 +21,6 @@ interface QueryPanelProps {
   remove_selected_edge: () => Promise<void>;
 }
 
-/**
- * 渲染查询与详情面板。
- *
- * @param props - 组件属性。
- * @returns 查询与详情面板组件。
- */
 export function QueryPanel(props: QueryPanelProps) {
   const {
     query,
@@ -45,11 +36,6 @@ export function QueryPanel(props: QueryPanelProps) {
   } = props;
   const can_submit_query: boolean = Boolean(query.trim()) && !is_querying;
 
-  /**
-   * 处理问答表单提交。
-   *
-   * @param event - 表单提交事件。
-   */
   function handle_submit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     void submit_query();
@@ -59,7 +45,7 @@ export function QueryPanel(props: QueryPanelProps) {
     <aside className='panel'>
       <header className='panel-header'>
         <h2>问答与详情</h2>
-        <p>向当前知识库提问，并查看被检索到的引用、排序结果与选中节点详情。</p>
+        <p>向当前知识库提问，并查看引用片段、排序结果与选中节点详情。</p>
       </header>
 
       <form className='query-form' onSubmit={handle_submit}>

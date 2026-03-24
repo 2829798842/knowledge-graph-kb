@@ -5,7 +5,7 @@
 
 const NODE_TYPE_LABELS: Record<string, string> = {
   document: '文档',
-  chunk: '切块',
+  chunk: '片段',
   entity: '实体',
 };
 
@@ -24,10 +24,21 @@ const JOB_STATUS_LABELS: Record<string, string> = {
 };
 
 const DOCUMENT_STATUS_LABELS: Record<string, string> = {
-  queued: '排队中',
-  processing: '处理中',
-  completed: '已完成',
+  queued: '待抽取',
+  processing: '抽取中',
+  ready: '可查询',
   failed: '失败',
+};
+
+const JOB_STAGE_LABELS: Record<string, string> = {
+  queued: '等待开始',
+  parsing: '解析文档',
+  chunking: '自然分段',
+  embedding: '生成向量',
+  extracting: 'LLM 抽取',
+  graph: '更新图谱',
+  completed: '处理完成',
+  failed: '处理失败',
 };
 
 /**
@@ -71,6 +82,16 @@ export function get_document_status_label(status: string): string {
 }
 
 /**
+ * 获取任务阶段中文标签。
+ *
+ * @param stage - 任务阶段。
+ * @returns 任务阶段中文标签。
+ */
+export function get_job_stage_label(stage: string): string {
+  return JOB_STAGE_LABELS[stage] ?? stage;
+}
+
+/**
  * 获取文件类型中文说明。
  *
  * @param file_type - 文件类型后缀。
@@ -79,7 +100,7 @@ export function get_document_status_label(status: string): string {
 export function get_file_type_label(file_type: string): string {
   const normalized_file_type: string = file_type.toLowerCase();
   if (normalized_file_type === 'txt') {
-    return '文本文件';
+    return '文本文档';
   }
   if (normalized_file_type === 'pdf') {
     return 'PDF 文档';

@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ROOT_DIR: Path = Path(__file__).resolve().parents[3]
+ROOT_DIR: Path = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     openai_embed_model: str = Field(
         default="text-embedding-3-large",
         validation_alias=AliasChoices("OPENAI_EMBED_MODEL", "EMBEDDING_MODEL"),
+    )
+    embedding_batch_size: int = Field(
+        default=32,
+        validation_alias=AliasChoices("EMBEDDING_BATCH_SIZE"),
     )
     chunk_size_tokens: int = 600
     chunk_overlap_tokens: int = 120

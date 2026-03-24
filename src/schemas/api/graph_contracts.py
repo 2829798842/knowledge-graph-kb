@@ -1,6 +1,4 @@
-"""模块名称：contracts.api.graph_contracts
-
-主要功能：定义图谱节点、边以及手工连边操作相关的接口契约。
+"""定义图谱节点、边以及手工连边操作相关的接口契约。
 """
 
 from typing import Any

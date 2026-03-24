@@ -1,10 +1,9 @@
 """基于 FAISS 的向量存储实现，并提供本地元数据持久化。"""
-
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import faiss
 import numpy as np
@@ -144,6 +143,25 @@ class FaissVectorStore:
         self._dimension = None
         self._persist_state()
 
+    def remove_document(self, document_id: str) -> None:
+        """移除指定文档对应的全部向量记录。
+
+        Args:
+            document_id: 文档主键。
+        """
+
+        next_metadata: list[dict[str, Any]] = [
+            payload
+            for payload in self._metadata
+            if str(payload.get("document_id")) != document_id
+        ]
+        if len(next_metadata) == len(self._metadata):
+            return
+
+        self._metadata = next_metadata
+        self._rebuild_index()
+        self._persist_state()
+
     def _load_state(self) -> None:
         """如果磁盘上存在数据，则加载已持久化的元数据和 FAISS 索引。"""
 
@@ -151,8 +169,9 @@ class FaissVectorStore:
             self._metadata = json.loads(self.metadata_path.read_text(encoding="utf-8"))
 
         if self.index_path.exists():
-            self._index = faiss.read_index(str(self.index_path))
-            self._dimension = int(self._index.d)
+            loaded_index: Any = faiss.read_index(str(self.index_path))
+            self._index = loaded_index
+            self._dimension = int(cast(Any, loaded_index).d)
             return
 
         if self._metadata:
@@ -181,7 +200,7 @@ class FaissVectorStore:
 
         vectors: np.ndarray = self._normalize_vectors([item["vector"] for item in self._metadata], enforce_dim=False)
         self._dimension = int(vectors.shape[1])
-        index = faiss.IndexFlatIP(self._dimension)
+        index: Any = faiss.IndexFlatIP(self._dimension)
         index.add(vectors)
         self._index = index
 

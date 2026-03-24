@@ -1,6 +1,4 @@
-"""模块名称：api.routes.query_routes
-
-主要功能：提供知识库问答查询接口。
+"""提供知识库问答查询接口。
 """
 
 from fastapi import APIRouter, Depends, HTTPException

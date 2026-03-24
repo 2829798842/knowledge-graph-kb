@@ -1,8 +1,5 @@
-"""模块名称：api.dependencies
-
-主要功能：统一封装 FastAPI 依赖注入所需的服务构造逻辑。
+"""统一封装 FastAPI 依赖注入所需的服务构造逻辑。
 """
-
 from src.config import get_settings
 from src.services import (
     EntityExtractionService,

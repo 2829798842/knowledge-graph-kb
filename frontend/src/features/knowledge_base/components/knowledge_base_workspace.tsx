@@ -1,5 +1,6 @@
 /**
- * 组合知识库界面的主工作区。
+ * 模块名称：features/knowledge_base/components/knowledge_base_workspace
+ * 主要功能：组合知识库界面的主工作区。
  */
 
 import type { ResolvedTheme, ThemeMode } from '../../../theme';
@@ -27,6 +28,8 @@ export function KnowledgeBaseWorkspace(props: KnowledgeBaseWorkspaceProps) {
     is_model_config_loading,
     is_model_config_saving,
     is_model_config_testing,
+    is_starting_extraction,
+    starting_document_id,
     selected_node,
     selected_edge,
     source_node_id,
@@ -48,6 +51,7 @@ export function KnowledgeBaseWorkspace(props: KnowledgeBaseWorkspaceProps) {
     select_edge,
     clear_selection,
     upload_file,
+    start_document_extraction,
     submit_query,
     create_edge,
     remove_selected_edge,
@@ -77,9 +81,12 @@ export function KnowledgeBaseWorkspace(props: KnowledgeBaseWorkspaceProps) {
             selected_document_id={selected_document_id}
             include_chunks={include_chunks}
             is_uploading={is_uploading}
+            is_starting_extraction={is_starting_extraction}
+            starting_document_id={starting_document_id}
             set_selected_document_id={set_selected_document_id}
             set_include_chunks={set_include_chunks}
             upload_file={upload_file}
+            start_document_extraction={start_document_extraction}
           />
 
           <ModelConfigPanel

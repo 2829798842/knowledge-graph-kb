@@ -1,12 +1,7 @@
 """用于本地持久化密钥的加密辅助工具。"""
-
-from __future__ import annotations
-
 import os
 from pathlib import Path
-
 from cryptography.fernet import Fernet, InvalidToken
-
 from src.config import Settings, ensure_app_dirs
 
 ENCRYPTED_SECRET_PREFIX: str = "enc:v1:"

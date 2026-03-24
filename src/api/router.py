@@ -1,6 +1,4 @@
-"""模块名称：api.router
-
-主要功能：聚合所有路由并向外提供统一的应用路由入口。
+"""聚合所有路由并向外提供统一的应用路由入口。
 """
 
 from fastapi import APIRouter

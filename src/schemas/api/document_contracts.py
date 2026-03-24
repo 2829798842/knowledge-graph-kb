@@ -1,23 +1,23 @@
-"""模块名称：contracts.api.document_contracts
+"""模块名称：schemas.api.document_contracts
 
-主要功能：定义文档导入、任务状态与文档详情相关的接口契约。
+主要功能：定义文档上传、任务进度与文档详情相关的接口契约。
 """
 
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class FileImportResponse(BaseModel):
-    """文件导入响应模型。
+    """文件上传响应模型。
 
     Attributes:
-        job_id (str): 新建导入任务的主键。
+        job_id (str | None): 若上传后立即触发任务，则返回任务主键；否则为空。
         document_id (str): 对应文档的主键。
     """
 
-    job_id: str
+    job_id: str | None = None
     document_id: str
 
 
@@ -28,14 +28,22 @@ class JobRead(BaseModel):
         id (str): 任务主键。
         document_id (str): 关联文档主键。
         status (str): 当前任务状态。
+        progress_percent (int): 当前进度百分比。
+        stage (str): 当前处理阶段。
+        status_message (str | None): 当前阶段的展示消息。
         error_message (str | None): 失败时的错误信息。
         created_at (datetime): 创建时间。
         updated_at (datetime): 更新时间。
     """
 
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     document_id: str
     status: str
+    progress_percent: int = 0
+    stage: str = "queued"
+    status_message: str | None = None
     error_message: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -55,6 +63,8 @@ class DocumentRead(BaseModel):
         created_at (datetime): 创建时间。
         updated_at (datetime): 更新时间。
     """
+
+    model_config = ConfigDict(from_attributes=True)
 
     id: str
     filename: str
