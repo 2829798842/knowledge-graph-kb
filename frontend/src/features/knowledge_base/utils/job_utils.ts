@@ -51,3 +51,26 @@ export function get_latest_job_for_document(
   matched_jobs.sort((left, right) => right.created_at.localeCompare(left.created_at));
   return matched_jobs[0];
 }
+
+/**
+ * 格式化任务当前阶段的细粒度进度文案。
+ *
+ * @param job - 当前任务。
+ * @returns 细粒度阶段进度文案；若当前阶段没有子进度则返回 `null`。
+ */
+export function format_job_stage_detail(job: KnowledgeBaseJob): string | null {
+  const stage_total: number = typeof job.stage_total === 'number' ? job.stage_total : 0;
+  const stage_current: number = typeof job.stage_current === 'number' ? job.stage_current : 0;
+  const stage_unit: string | null = typeof job.stage_unit === 'string' ? job.stage_unit : null;
+
+  if (!stage_total || !stage_unit) {
+    return null;
+  }
+
+  if (stage_current <= 0) {
+    return `共 ${stage_total} 个${stage_unit}`;
+  }
+
+  const safe_current: number = Math.min(stage_current, stage_total);
+  return `第 ${safe_current}/${stage_total} 个${stage_unit}`;
+}

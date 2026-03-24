@@ -6,7 +6,7 @@
 import { useMemo, useState, type ChangeEvent, type DragEvent } from 'react';
 
 import type { KnowledgeBaseDocument, KnowledgeBaseJob } from '../../types/knowledge_base';
-import { get_latest_job_for_document } from '../../utils/job_utils';
+import { format_job_stage_detail, get_latest_job_for_document } from '../../utils/job_utils';
 import {
   get_document_status_label,
   get_file_type_label,
@@ -52,6 +52,10 @@ export function ImportPanel(props: ImportPanelProps) {
     () => (selected_document ? get_latest_job_for_document(jobs, selected_document.id) : null),
     [jobs, selected_document],
   );
+  const selected_job_stage_detail: string | null = useMemo(
+    () => (selected_job ? format_job_stage_detail(selected_job) : null),
+    [selected_job],
+  );
   const can_start_extraction: boolean = Boolean(
     selected_document_id &&
       !is_starting_extraction &&
@@ -90,7 +94,7 @@ export function ImportPanel(props: ImportPanelProps) {
     <aside className='panel'>
       <header className='panel-header'>
         <h2>导入与抽取</h2>
-        <p>先上传文档，再手动开始 LLM 抽取。处理过程中会展示阶段、进度和结果统计。</p>
+        <p>先上传文档，再手动开始 LLM 抽取。处理过程中会展示阶段、百分比和窗口级进度。</p>
       </header>
 
       <label
@@ -107,7 +111,7 @@ export function ImportPanel(props: ImportPanelProps) {
           onChange={handle_file_change}
         />
         <span>{is_uploading ? '正在上传文档...' : '拖拽文件到这里，或点击选择文档'}</span>
-        <small>支持 `.txt`、`.pdf`、`.docx`。上传后不会自动调用模型，便于你先确认文档和配置。</small>
+        <small>支持 `.txt`、`.pdf`、`.docx`。旧版 `.doc` 请先另存为 `.docx`。</small>
       </label>
 
       <div className='toggle-row'>
@@ -125,7 +129,7 @@ export function ImportPanel(props: ImportPanelProps) {
         <div className='section-title-row'>
           <div>
             <h3>当前文档</h3>
-            <p className='muted-text'>选中文档后可手动开始抽取，也能查看最新进度。</p>
+            <p className='muted-text'>选中文档后可手动开始抽取，也能查看最新任务进度。</p>
           </div>
           <button
             className='primary-button'
@@ -144,12 +148,13 @@ export function ImportPanel(props: ImportPanelProps) {
               {get_file_type_label(selected_document.file_type)} · {get_document_status_label(selected_document.status)}
             </span>
             <p className='muted-text'>
-              {selected_document.summary ?? '尚未完成抽取，当前还没有切块和实体统计。'}
+              {selected_document.summary ?? '尚未完成抽取，当前还没有片段、实体和关系统计。'}
             </p>
             <div className='document-meta-grid'>
               <span>片段 {read_numeric_metadata(selected_document.metadata, 'chunk_count')}</span>
               <span>实体 {read_numeric_metadata(selected_document.metadata, 'entity_count')}</span>
               <span>关系 {read_numeric_metadata(selected_document.metadata, 'relation_count')}</span>
+              <span>窗口 {read_numeric_metadata(selected_document.metadata, 'extraction_window_count')}</span>
             </div>
             {selected_job ? (
               <div className='job-progress-block'>
@@ -160,7 +165,10 @@ export function ImportPanel(props: ImportPanelProps) {
                 <div className='job-progress-track'>
                   <div className='job-progress-fill' style={{ width: `${selected_job.progress_percent}%` }} />
                 </div>
-                <small>{selected_job.status_message ?? get_job_stage_label(selected_job.stage)}</small>
+                <div className='job-progress-meta'>
+                  <small>{selected_job.status_message ?? get_job_stage_label(selected_job.stage)}</small>
+                  {selected_job_stage_detail ? <small className='job-progress-detail'>{selected_job_stage_detail}</small> : null}
+                </div>
               </div>
             ) : (
               <small>上传完成后，点击“开始 LLM 抽取”即可进入切块、向量化和实体关系抽取。</small>
@@ -168,7 +176,7 @@ export function ImportPanel(props: ImportPanelProps) {
           </article>
         ) : (
           <div className='empty-state-card'>
-            <strong>还没有选中文档</strong>
+            <strong>还没有选中文档。</strong>
             <span>先上传一个文件，或在下方文档列表里选择一个已上传文档。</span>
           </div>
         )}
@@ -193,6 +201,7 @@ export function ImportPanel(props: ImportPanelProps) {
           {documents.length ? (
             documents.map((document) => {
               const latest_job: KnowledgeBaseJob | null = get_latest_job_for_document(jobs, document.id);
+              const stage_detail: string | null = latest_job ? format_job_stage_detail(latest_job) : null;
               return (
                 <li
                   className={document.id === selected_document_id ? 'document-card active' : 'document-card'}
@@ -203,9 +212,12 @@ export function ImportPanel(props: ImportPanelProps) {
                     <span>{document.summary ?? get_file_type_label(document.file_type)}</span>
                     <em>{get_document_status_label(document.status)}</em>
                     {latest_job ? (
-                      <small>
-                        {latest_job.progress_percent}% · {latest_job.status_message ?? get_job_stage_label(latest_job.stage)}
-                      </small>
+                      <>
+                        <small>
+                          {latest_job.progress_percent}% · {latest_job.status_message ?? get_job_stage_label(latest_job.stage)}
+                        </small>
+                        {stage_detail ? <small>{stage_detail}</small> : null}
+                      </>
                     ) : null}
                   </button>
                 </li>
@@ -227,6 +239,7 @@ export function ImportPanel(props: ImportPanelProps) {
             jobs.map((job) => {
               const document_name: string =
                 documents.find((document) => document.id === job.document_id)?.original_name ?? job.document_id;
+              const stage_detail: string | null = format_job_stage_detail(job);
               return (
                 <li className='job-progress-card' key={job.id}>
                   <div className='job-progress-header'>
@@ -241,8 +254,9 @@ export function ImportPanel(props: ImportPanelProps) {
                   </div>
                   <div className='job-progress-footer'>
                     <span>{job.progress_percent}%</span>
-                    {job.error_message ? <small>{job.error_message}</small> : null}
+                    {stage_detail ? <small className='job-progress-detail'>{stage_detail}</small> : null}
                   </div>
+                  {job.error_message ? <small className='job-error-text'>{job.error_message}</small> : null}
                 </li>
               );
             })

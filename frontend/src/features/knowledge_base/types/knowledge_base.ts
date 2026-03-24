@@ -26,6 +26,9 @@ export interface KnowledgeBaseJob {
   status: JobStatus;
   progress_percent: number;
   stage: string;
+  stage_current: number;
+  stage_total: number;
+  stage_unit: string | null;
   status_message: string | null;
   error_message: string | null;
   created_at: string;

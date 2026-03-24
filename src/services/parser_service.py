@@ -7,11 +7,13 @@ import re
 from pathlib import Path
 
 from docx import Document as DocxDocument
+from docx.table import Table
+from docx.text.paragraph import Paragraph
 from pypdf import PdfReader
 
 SUPPORTED_EXTENSIONS: set[str] = {".txt", ".pdf", ".docx"}
-LIST_PREFIX_PATTERN = re.compile(r"^([*\-•]|(\d+[\.\)]|[一二三四五六七八九十]+[、.]))\s+")
-SENTENCE_ENDING_PATTERN = re.compile(r"[。！？!?；;：:]$")
+LIST_PREFIX_PATTERN = re.compile(r"^([*\-\u2022]|(\d+[\.\)]|[一二三四五六七八九十]+[、\.]))\s+")
+SENTENCE_ENDING_PATTERN = re.compile(r"[。！？!?：:]$")
 
 
 class UnsupportedFileTypeError(ValueError):
@@ -33,7 +35,8 @@ def detect_file_type(path: Path) -> str:
 
     suffix: str = path.suffix.lower()
     if suffix not in SUPPORTED_EXTENSIONS:
-        raise UnsupportedFileTypeError(f"Unsupported file type: {suffix}")
+        display_suffix: str = suffix or "无扩展名"
+        raise UnsupportedFileTypeError(f"暂不支持 {display_suffix}，目前仅支持 .txt、.pdf、.docx")
     return suffix.removeprefix(".")
 
 
@@ -53,15 +56,24 @@ def extract_text(path: Path) -> str:
     suffix: str = path.suffix.lower()
     if suffix == ".txt":
         return _cleanup_extracted_text(path.read_text(encoding="utf-8", errors="ignore"))
+
     if suffix == ".pdf":
         pdf_reader = PdfReader(str(path))
         page_texts: list[str] = [page.extract_text() or "" for page in pdf_reader.pages]
-        return _cleanup_extracted_text("\n\n".join(page_texts))
+        cleaned_text: str = _cleanup_extracted_text("\n\n".join(page_texts))
+        if cleaned_text:
+            return cleaned_text
+        raise ValueError("PDF 中未提取到可用文本，请确认文件不是扫描件或图片版。")
+
     if suffix == ".docx":
         docx_document = DocxDocument(str(path))
-        paragraph_texts: list[str] = [paragraph.text for paragraph in docx_document.paragraphs]
-        return _cleanup_extracted_text("\n\n".join(paragraph_texts))
-    raise UnsupportedFileTypeError(f"Unsupported file type: {suffix}")
+        block_texts: list[str] = _extract_docx_blocks(docx_document)
+        cleaned_text = _cleanup_extracted_text("\n\n".join(block_texts))
+        if cleaned_text:
+            return cleaned_text
+        raise ValueError("Word 文档中未提取到可用文本，请确认文件内容不是空白。")
+
+    raise UnsupportedFileTypeError(f"暂不支持 {suffix or '无扩展名'}，目前仅支持 .txt、.pdf、.docx")
 
 
 def _cleanup_extracted_text(text: str) -> str:
@@ -90,6 +102,46 @@ def _cleanup_extracted_text(text: str) -> str:
         cleaned_blocks.extend(_merge_wrapped_lines(lines))
 
     return "\n\n".join(cleaned_blocks).strip()
+
+
+def _extract_docx_blocks(document: DocxDocument) -> list[str]:
+    """按文档顺序提取 DOCX 中的段落与表格文本。
+
+    Args:
+        document: 已打开的 DOCX 文档对象。
+
+    Returns:
+        list[str]: 便于后续清洗的文本块列表。
+    """
+
+    block_texts: list[str] = []
+
+    for child in document.element.body.iterchildren():
+        tag_name: str = child.tag.rsplit("}", maxsplit=1)[-1]
+        if tag_name == "p":
+            paragraph = Paragraph(child, document)
+            paragraph_text: str = paragraph.text.strip()
+            if paragraph_text:
+                block_texts.append(paragraph_text)
+            continue
+
+        if tag_name == "tbl":
+            table = Table(child, document)
+            table_rows: list[str] = []
+            for row in table.rows:
+                row_cells: list[str] = []
+                for cell in row.cells:
+                    cell_text: str = " ".join(
+                        paragraph.text.strip() for paragraph in cell.paragraphs if paragraph.text.strip()
+                    ).strip()
+                    if cell_text:
+                        row_cells.append(cell_text)
+                if row_cells:
+                    table_rows.append(" | ".join(row_cells))
+            if table_rows:
+                block_texts.append("\n".join(table_rows))
+
+    return block_texts
 
 
 def _merge_wrapped_lines(lines: list[str]) -> list[str]:

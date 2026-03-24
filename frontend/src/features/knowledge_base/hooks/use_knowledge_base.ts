@@ -127,6 +127,15 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
   const [error, set_error] = useState<string | null>(null);
   const [is_uploading, set_is_uploading] = useState<boolean>(false);
   const [is_querying, set_is_querying] = useState<boolean>(false);
+  const active_job_ids: string[] = useMemo(() => get_active_job_ids(jobs), [jobs]);
+  const highlighted_node_ids: string[] = useMemo(
+    () => query_result?.ranked_nodes.map((node) => node.id) ?? [],
+    [query_result],
+  );
+  const highlighted_edge_ids: string[] = useMemo(
+    () => query_result?.ranked_edges.map((edge) => edge.id) ?? [],
+    [query_result],
+  );
 
   useEffect(() => {
     void refresh_documents();
@@ -156,7 +165,6 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
   }, [include_chunks, selected_document_id]);
 
   useEffect(() => {
-    const active_job_ids: string[] = get_active_job_ids(jobs);
     if (!active_job_ids.length) {
       return;
     }
@@ -165,7 +173,7 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
       void poll_jobs(active_job_ids);
     }, JOB_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [jobs, include_chunks, selected_document_id]);
+  }, [active_job_ids, include_chunks, selected_document_id]);
 
   async function refresh_documents(): Promise<void> {
     try {
@@ -386,9 +394,6 @@ export function use_knowledge_base(): UseKnowledgeBaseResult {
     set_selected_node(null);
     set_selected_edge(null);
   }
-
-  const highlighted_node_ids: string[] = query_result?.ranked_nodes.map((node) => node.id) ?? [];
-  const highlighted_edge_ids: string[] = query_result?.ranked_edges.map((edge) => edge.id) ?? [];
 
   return {
     documents,

@@ -6,7 +6,7 @@
 import type { FormEvent } from 'react';
 
 import type { GraphEdgeRecord, GraphNodeRecord, QueryResult } from '../../types/knowledge_base';
-import { get_edge_type_label, get_node_type_label } from '../../utils/label_utils';
+import { get_edge_display_label, get_node_type_label } from '../../utils/label_utils';
 
 interface QueryPanelProps {
   query: string;
@@ -92,7 +92,7 @@ export function QueryPanel(props: QueryPanelProps) {
 
         {selected_edge ? (
           <article className='detail-card'>
-            <strong>{get_edge_type_label(selected_edge.type)}</strong>
+            <strong>{get_edge_display_label(selected_edge.type, selected_edge.metadata)}</strong>
             <span>
               {selected_edge.source} {'->'} {selected_edge.target}
             </span>

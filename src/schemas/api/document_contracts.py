@@ -43,6 +43,9 @@ class JobRead(BaseModel):
     status: str
     progress_percent: int = 0
     stage: str = "queued"
+    stage_current: int = 0
+    stage_total: int = 0
+    stage_unit: str | None = None
     status_message: str | None = None
     error_message: str | None = None
     created_at: datetime

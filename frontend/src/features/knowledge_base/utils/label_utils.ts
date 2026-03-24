@@ -62,6 +62,21 @@ export function get_edge_type_label(edge_type: string): string {
 }
 
 /**
+ * 获取边在界面中的优先展示名称。
+ *
+ * @param edge_type - 边类型。
+ * @param metadata - 边扩展信息。
+ * @returns 优先使用具体关系名，否则回退到边类型标签。
+ */
+export function get_edge_display_label(edge_type: string, metadata?: Record<string, unknown>): string {
+  const relation: unknown = metadata?.relation;
+  if (typeof relation === 'string' && relation.trim()) {
+    return relation.trim();
+  }
+  return get_edge_type_label(edge_type);
+}
+
+/**
  * 获取任务状态中文标签。
  *
  * @param status - 任务状态。

@@ -1,11 +1,20 @@
-"""按窗口批量调用 LLM 做实体关系抽取，并对多批结果去重聚合。
+"""模块名称：services.entity_extraction_service
+
+features：按窗口批量调用 LLM 做实体关系抽取，并对多批结果去重合并。
 """
+
+from collections.abc import Callable
+
 from src.data import normalize_entity_name
 from src.schemas import ExtractionResult, ExtractedEntity, ExtractedRelation
 from src.services.openai_service import OpenAiService
+from src.utils.logging_utils import get_logger
 
 MAX_EXTRACTION_WINDOW_CHARACTERS: int = 12000
 MAX_EXTRACTION_WINDOW_CHUNKS: int = 6
+ExtractionProgressCallback = Callable[[int, int, str], None]
+
+logger = get_logger(__name__)
 
 
 class ExtractionWindow:
@@ -59,31 +68,77 @@ class EntityExtractionService:
         self.max_window_characters: int = max_window_characters
         self.max_window_chunks: int = max_window_chunks
 
-    def extract_document_graph(self, document_name: str, chunk_texts: list[str]) -> ExtractionResult:
+    def build_windows(self, chunk_texts: list[str]) -> list[ExtractionWindow]:
+        """根据字符数和切块数量限制构建抽取窗口。
+
+        Args:
+            chunk_texts: 文档切块文本列表。
+
+        Returns:
+            list[ExtractionWindow]: 抽取窗口列表。
+        """
+
+        return self._build_windows(chunk_texts)
+
+    def extract_document_graph(
+        self,
+        document_name: str,
+        chunk_texts: list[str],
+        *,
+        windows: list[ExtractionWindow] | None = None,
+        progress_callback: ExtractionProgressCallback | None = None,
+    ) -> ExtractionResult:
         """对整篇文档执行分批实体关系抽取。
 
         Args:
             document_name: 文档名称。
             chunk_texts: 文档切块文本列表。
+            windows: 已预构建的抽取窗口列表。
+            progress_callback: 每个窗口开始或完成时触发的进度回调。
 
         Returns:
             ExtractionResult: 聚合去重后的抽取结果。
         """
 
-        windows: list[ExtractionWindow] = self._build_windows(chunk_texts)
-        partial_results: list[ExtractionResult] = [
-            self.openai_service.extract_entities(
+        extraction_windows: list[ExtractionWindow] = [
+            window for window in (windows or self.build_windows(chunk_texts)) if window.text.strip()
+        ]
+        partial_results: list[ExtractionResult] = []
+        logger.info("实体抽取窗口已准备完成: document_name=%s window_count=%s", document_name, len(extraction_windows))
+
+        for window_index, window in enumerate(extraction_windows, start=1):
+            if progress_callback is not None:
+                progress_callback(window_index, len(extraction_windows), "started")
+
+            logger.info(
+                "开始抽取窗口: document_name=%s window=%s/%s chunk_count=%s",
+                document_name,
+                window_index,
+                len(extraction_windows),
+                len(window.chunk_indexes),
+            )
+            partial_result: ExtractionResult = self.openai_service.extract_entities(
                 document_name=document_name,
                 text=window.text,
                 window_label=f"window-{window.index}",
             )
-            for window in windows
-            if window.text.strip()
-        ]
+            partial_results.append(partial_result)
+
+            logger.info(
+                "完成抽取窗口: document_name=%s window=%s/%s entity_count=%s relation_count=%s",
+                document_name,
+                window_index,
+                len(extraction_windows),
+                len(partial_result.entities),
+                len(partial_result.relations),
+            )
+            if progress_callback is not None:
+                progress_callback(window_index, len(extraction_windows), "completed")
+
         return self._merge_results(partial_results)
 
     def _build_windows(self, chunk_texts: list[str]) -> list[ExtractionWindow]:
-        """根据字符数和切块数限制构建抽取窗口。
+        """根据字符数和切块数量限制构建抽取窗口。
 
         Args:
             chunk_texts: 文档切块文本列表。

@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     frontend_dist_dir: str = "./frontend/dist"
     server_host: str = "0.0.0.0"
     server_port: int = 8000
+    log_level: str = Field(
+        default="INFO",
+        validation_alias=AliasChoices("LOG_LEVEL"),
+    )
     openai_api_key: str = Field(
         default="",
         validation_alias=AliasChoices("OPENAI_API_KEY", "MODEL_API_KEY"),

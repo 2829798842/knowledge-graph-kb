@@ -1,6 +1,4 @@
-"""模块名称：api.routes.document_routes
-
-主要功能：提供文件上传、手动开始抽取、任务查询与文档列表接口。
+"""提供文件上传、手动开始抽取、任务查询与文档列表接口。
 """
 
 from pathlib import Path
@@ -25,8 +23,10 @@ from src.services import IngestionService
 from src.services.graph_service import seed_document_node
 from src.services.parser_service import SUPPORTED_EXTENSIONS
 from src.utils.file_utils import sanitize_filename
+from src.utils.logging_utils import get_logger
 
 router = APIRouter(prefix="/api", tags=["documents"])
+logger = get_logger(__name__)
 
 
 @router.post("/files/import", response_model=FileImportResponse)
@@ -52,7 +52,10 @@ async def import_file(
     suffix: str = Path(original_name).suffix.lower()
     if suffix not in SUPPORTED_EXTENSIONS:
         allowed_text: str = ", ".join(sorted(SUPPORTED_EXTENSIONS))
-        raise HTTPException(status_code=400, detail=f"Unsupported file type. Allowed: {allowed_text}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"暂不支持 {suffix or '无扩展名'}，目前仅支持 {allowed_text}。若是旧版 Word，请先转换为 .docx。",
+        )
 
     saved_name: str = f"{uuid4()}_{sanitize_filename(original_name)}"
     destination: Path = settings.resolved_upload_dir / saved_name
@@ -72,6 +75,13 @@ async def import_file(
     seed_document_node(session, document)
     session.commit()
 
+    logger.info(
+        "文件上传完成: document_id=%s original_name=%s file_type=%s size_bytes=%s",
+        document.id,
+        original_name,
+        document.file_type,
+        len(contents),
+    )
     return FileImportResponse(job_id=None, document_id=document.id)
 
 
@@ -101,6 +111,12 @@ def start_document_extraction(
 
     active_job = _find_active_job(session, document_id=document_id)
     if active_job is not None:
+        logger.info(
+            "复用进行中的抽取任务: job_id=%s document_id=%s original_name=%s",
+            active_job.id,
+            document.id,
+            document.original_name,
+        )
         return JobRead.model_validate(active_job)
 
     updated_at = utc_now()
@@ -111,6 +127,9 @@ def start_document_extraction(
         status=JobStatus.PENDING,
         progress_percent=0,
         stage="queued",
+        stage_current=0,
+        stage_total=0,
+        stage_unit=None,
         status_message="等待开始抽取",
         error_message=None,
         updated_at=updated_at,
@@ -120,6 +139,12 @@ def start_document_extraction(
     session.commit()
     session.refresh(job)
 
+    logger.info(
+        "抽取任务已创建: job_id=%s document_id=%s original_name=%s",
+        job.id,
+        document.id,
+        document.original_name,
+    )
     background_tasks.add_task(run_ingestion_job, job.id, document.id)
     return JobRead.model_validate(job)
 
@@ -229,13 +254,14 @@ def run_ingestion_job(job_id: str, document_id: str) -> None:
         document_id: 文档主键。
     """
 
+    logger.info("后台抽取任务开始执行: job_id=%s document_id=%s", job_id, document_id)
     service: IngestionService = get_ingestion_service()
     with Session(get_engine()) as session:
         service.process_document(session, job_id=job_id, document_id=document_id)
 
 
 def _find_active_job(session: Session, *, document_id: str) -> IngestionJob | None:
-    """查找文档当前仍处于进行中的任务。
+    """查找文档当前仍处于处理中状态的任务。
 
     Args:
         session: 数据库会话。
