@@ -1,0 +1,30 @@
+"""Exports for runtime infrastructure services."""
+
+from .openai_gateway import OpenAiGateway
+from .sqlite_gateway import SQLiteGateway
+from .sqlite_repositories import (
+    GraphRepository,
+    ImportJobRepository,
+    ModelConfigRepository,
+    RecordRepository,
+    SearchRepository,
+    SourceRepository,
+    normalize_entity_name,
+)
+from .vector_index import StaleVectorIndexError, VectorIndex, VectorIndexRecord, VectorSearchResult
+
+__all__ = [
+    "GraphRepository",
+    "ImportJobRepository",
+    "ModelConfigRepository",
+    "OpenAiGateway",
+    "RecordRepository",
+    "SearchRepository",
+    "SourceRepository",
+    "SQLiteGateway",
+    "StaleVectorIndexError",
+    "VectorIndex",
+    "VectorIndexRecord",
+    "VectorSearchResult",
+    "normalize_entity_name",
+]

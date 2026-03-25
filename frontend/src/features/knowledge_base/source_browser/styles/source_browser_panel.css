@@ -1,0 +1,46 @@
+/**
+ * Source-browser panel styles.
+ */
+
+.kb-panel-split-source {
+  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.kb-source-sidebar {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.kb-source-list,
+.kb-paragraph-list {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.kb-source-detail {
+  grid-template-rows: minmax(220px, auto) minmax(0, 1fr);
+}
+
+.kb-source-profile {
+  min-height: 0;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.kb-source-detail .kb-detail-card:last-child {
+  min-height: 0;
+  overflow: hidden;
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+@media (max-width: 1200px) {
+  .kb-panel-split-source {
+    grid-template-columns: 1fr;
+  }
+}

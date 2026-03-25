@@ -3,7 +3,10 @@
  * 主要功能：提供前端应用根入口，并挂载全局主题状态。
  */
 
+import { QueryClientProvider } from '@tanstack/react-query';
+
 import { KnowledgeBaseWorkspace } from './features/knowledge_base';
+import { kb_query_client } from './features/knowledge_base/shared/api/query_client';
 import { use_theme_mode } from './theme';
 
 /**
@@ -15,10 +18,12 @@ export default function App() {
   const { theme_mode, resolved_theme, set_theme_mode } = use_theme_mode();
 
   return (
-    <KnowledgeBaseWorkspace
-      theme_mode={theme_mode}
-      resolved_theme={resolved_theme}
-      set_theme_mode={set_theme_mode}
-    />
+    <QueryClientProvider client={kb_query_client}>
+      <KnowledgeBaseWorkspace
+        theme_mode={theme_mode}
+        resolved_theme={resolved_theme}
+        set_theme_mode={set_theme_mode}
+      />
+    </QueryClientProvider>
   );
 }

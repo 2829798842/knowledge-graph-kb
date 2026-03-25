@@ -15,6 +15,12 @@ class LocalSecretCipher:
     """使用文件持久化的 Fernet 密钥对本地密钥进行加解密。"""
 
     def __init__(self, settings: Settings) -> None:
+        """初始化本地密钥加解密器。
+
+        Args:
+            settings: 应用配置对象。
+        """
+
         self.settings: Settings = settings
         ensure_app_dirs(settings)
         self.key_path: Path = settings.resolved_model_config_secret_path
@@ -27,12 +33,12 @@ class LocalSecretCipher:
         return f"{ENCRYPTED_SECRET_PREFIX}{token.decode('utf-8')}"
 
     def decrypt(self, value: str) -> str:
-        """解密已保存密钥，并兼容旧版明文值。"""
+        """解密按当前格式保存的密钥。"""
 
         if not value:
             return ""
         if not value.startswith(ENCRYPTED_SECRET_PREFIX):
-            return value
+            raise SecretEncryptionError("已保存的 API Key 不是当前加密格式，请重新保存一次模型配置。")
 
         token: bytes = value.removeprefix(ENCRYPTED_SECRET_PREFIX).encode("utf-8")
         try:

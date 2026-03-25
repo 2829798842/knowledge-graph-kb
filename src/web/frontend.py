@@ -19,10 +19,28 @@ def register_frontend_routes(app: FastAPI, frontend_dist_dir: Path) -> None:
 
     @app.get("/", include_in_schema=False)
     def serve_frontend_index() -> FileResponse:
+        """返回前端入口页面。
+
+        Returns:
+            FileResponse: 前端入口文件响应。
+        """
+
         return FileResponse(index_file)
 
     @app.get("/{requested_path:path}", include_in_schema=False)
     def serve_frontend_route(requested_path: str) -> FileResponse:
+        """返回前端静态资源或单页应用入口。
+
+        Args:
+            requested_path: 请求的前端资源路径。
+
+        Returns:
+            FileResponse: 对应的静态资源或入口文件响应。
+
+        Raises:
+            HTTPException: 当请求路径指向 API 前缀时抛出。
+        """
+
         if requested_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
 
@@ -42,10 +60,28 @@ def _register_missing_frontend_routes(app: FastAPI, frontend_dist_dir: Path) -> 
 
     @app.get("/", include_in_schema=False)
     def serve_missing_frontend() -> HTMLResponse:
+        """返回前端构建产物缺失提示页。
+
+        Returns:
+            HTMLResponse: 缺失前端资源时的提示页面响应。
+        """
+
         return HTMLResponse(content=guidance_html, status_code=503)
 
     @app.get("/{requested_path:path}", include_in_schema=False)
     def serve_missing_frontend_fallback(requested_path: str) -> HTMLResponse:
+        """返回前端缺失时的回退提示页。
+
+        Args:
+            requested_path: 请求的前端资源路径。
+
+        Returns:
+            HTMLResponse: 缺失前端资源时的提示页面响应。
+
+        Raises:
+            HTTPException: 当请求路径指向 API 前缀时抛出。
+        """
+
         if requested_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
         return HTMLResponse(content=guidance_html, status_code=503)

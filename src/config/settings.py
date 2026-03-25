@@ -1,4 +1,4 @@
-"""应用配置与路径解析辅助工具。"""
+"""应用配置与路径辅助函数。"""
 
 from functools import lru_cache
 from pathlib import Path
@@ -6,14 +6,48 @@ from pathlib import Path
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ROOT_DIR: Path = Path(__file__).resolve().parents[2]
+ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    """从环境变量加载的应用配置。"""
+    """从环境变量加载的运行时应用配置。"""
 
     app_name: str = "Knowledge Graph KB"
-    database_url: str = "sqlite:///./data/app.db"
+    kb_data_dir: str = Field(
+        default="./data/kb",
+        validation_alias=AliasChoices("KB_DATA_DIR"),
+    )
+    kb_database_name: str = Field(
+        default="kb.sqlite3",
+        validation_alias=AliasChoices("KB_DATABASE_NAME"),
+    )
+    kb_vector_index_dir_name: str = Field(
+        default="vector_index",
+        validation_alias=AliasChoices("KB_VECTOR_INDEX_DIR_NAME"),
+    )
+    kb_upload_dir_name: str = Field(
+        default="uploads",
+        validation_alias=AliasChoices("KB_UPLOAD_DIR_NAME"),
+    )
+    kb_secret_dir_name: str = Field(
+        default="secrets",
+        validation_alias=AliasChoices("KB_SECRET_DIR_NAME"),
+    )
+    model_config_secret_name: str = Field(
+        default="model_config.key",
+        validation_alias=AliasChoices("MODEL_CONFIG_SECRET_NAME"),
+    )
+    kb_scan_roots: list[str] = Field(
+        default_factory=lambda: ["./data/kb/uploads", "./"],
+        validation_alias=AliasChoices("KB_SCAN_ROOTS"),
+    )
+    frontend_dist_dir: str = Field(
+        default="./frontend/dist",
+        validation_alias=AliasChoices("FRONTEND_DIST_DIR"),
+    )
+    server_host: str = Field(default="0.0.0.0", validation_alias=AliasChoices("SERVER_HOST"))
+    server_port: int = Field(default=8000, validation_alias=AliasChoices("SERVER_PORT"))
+    log_level: str = Field(default="INFO", validation_alias=AliasChoices("LOG_LEVEL"))
     model_provider: str = Field(
         default="openai",
         validation_alias=AliasChoices("MODEL_PROVIDER", "API_PROVIDER"),
@@ -21,22 +55,6 @@ class Settings(BaseSettings):
     model_base_url: str = Field(
         default="",
         validation_alias=AliasChoices("MODEL_BASE_URL", "OPENAI_BASE_URL"),
-    )
-    vector_store_dir: str = Field(
-        default="./data/faiss",
-        validation_alias=AliasChoices("VECTOR_STORE_DIR", "FAISS_INDEX_DIR"),
-    )
-    model_config_secret_path: str = Field(
-        default="./data/secrets/model_config.key",
-        validation_alias=AliasChoices("MODEL_CONFIG_SECRET_PATH"),
-    )
-    upload_dir: str = "./data/uploads"
-    frontend_dist_dir: str = "./frontend/dist"
-    server_host: str = "0.0.0.0"
-    server_port: int = 8000
-    log_level: str = Field(
-        default="INFO",
-        validation_alias=AliasChoices("LOG_LEVEL"),
     )
     openai_api_key: str = Field(
         default="",
@@ -54,11 +72,13 @@ class Settings(BaseSettings):
         default=32,
         validation_alias=AliasChoices("EMBEDDING_BATCH_SIZE"),
     )
-    chunk_size_tokens: int = 600
-    chunk_overlap_tokens: int = 120
-    query_seed_limit: int = 20
-    query_context_chunks: int = 6
-    graph_similarity_threshold: float = 0.78
+    chunk_size_tokens: int = Field(default=600, validation_alias=AliasChoices("CHUNK_SIZE_TOKENS"))
+    chunk_overlap_tokens: int = Field(default=120, validation_alias=AliasChoices("CHUNK_OVERLAP_TOKENS"))
+    query_context_chunks: int = Field(default=6, validation_alias=AliasChoices("QUERY_CONTEXT_CHUNKS"))
+    graph_similarity_threshold: float = Field(
+        default=0.78,
+        validation_alias=AliasChoices("GRAPH_SIMILARITY_THRESHOLD"),
+    )
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     model_config = SettingsConfigDict(
@@ -69,44 +89,35 @@ class Settings(BaseSettings):
     )
 
     @property
-    def resolved_database_url(self) -> str:
-        """当使用相对路径时，返回绝对的 SQLite 连接地址。"""
-
-        prefix: str = "sqlite:///"
-        if self.database_url.startswith(prefix) and not self.database_url.startswith(f"{prefix}/"):
-            relative_path: str = self.database_url.replace(prefix, "", 1)
-            absolute_path: Path = (ROOT_DIR / relative_path).resolve()
-            return f"{prefix}{absolute_path.as_posix()}"
-        return self.database_url
+    def resolved_kb_data_dir(self) -> Path:
+        return self._resolve_path(self.kb_data_dir)
 
     @property
-    def resolved_vector_store_dir(self) -> Path:
-        """以绝对路径形式返回 FAISS 存储目录。"""
-
-        return self._resolve_path(self.vector_store_dir)
+    def resolved_kb_db_path(self) -> Path:
+        return self.resolved_kb_data_dir / self.kb_database_name
 
     @property
-    def resolved_upload_dir(self) -> Path:
-        """以绝对路径形式返回上传目录。"""
+    def resolved_kb_vector_dir(self) -> Path:
+        return self.resolved_kb_data_dir / self.kb_vector_index_dir_name
 
-        return self._resolve_path(self.upload_dir)
+    @property
+    def resolved_kb_upload_dir(self) -> Path:
+        return self.resolved_kb_data_dir / self.kb_upload_dir_name
 
     @property
     def resolved_model_config_secret_path(self) -> Path:
-        """返回持久化模型密钥所用的加密密钥文件路径。"""
+        return self.resolved_kb_data_dir / self.kb_secret_dir_name / self.model_config_secret_name
 
-        return self._resolve_path(self.model_config_secret_path)
+    @property
+    def resolved_kb_scan_roots(self) -> list[Path]:
+        return [self._resolve_path(path) for path in self.kb_scan_roots]
 
     @property
     def resolved_frontend_dist_dir(self) -> Path:
-        """以绝对路径形式返回前端构建产物目录。"""
-
         return self._resolve_path(self.frontend_dist_dir)
 
     def _resolve_path(self, value: str) -> Path:
-        """基于项目根目录解析相对路径。"""
-
-        path: Path = Path(value)
+        path = Path(value)
         if path.is_absolute():
             return path
         return (ROOT_DIR / path).resolve()
@@ -114,18 +125,16 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """返回当前进程缓存的配置对象。"""
+    """返回带缓存的应用配置。"""
 
     return Settings()
 
 
 def ensure_app_dirs(settings: Settings | None = None) -> None:
-    """在应用启动前确保运行期目录已创建。"""
+    """创建应用运行所需的目录。"""
 
-    active_settings: Settings = settings or get_settings()
-    active_settings.resolved_vector_store_dir.mkdir(parents=True, exist_ok=True)
-    active_settings.resolved_upload_dir.mkdir(parents=True, exist_ok=True)
+    active_settings = settings or get_settings()
+    active_settings.resolved_kb_data_dir.mkdir(parents=True, exist_ok=True)
+    active_settings.resolved_kb_vector_dir.mkdir(parents=True, exist_ok=True)
+    active_settings.resolved_kb_upload_dir.mkdir(parents=True, exist_ok=True)
     active_settings.resolved_model_config_secret_path.parent.mkdir(parents=True, exist_ok=True)
-    if active_settings.resolved_database_url.startswith("sqlite:///"):
-        db_path: Path = Path(active_settings.resolved_database_url.replace("sqlite:///", "", 1))
-        db_path.parent.mkdir(parents=True, exist_ok=True)

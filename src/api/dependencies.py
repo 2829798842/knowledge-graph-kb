@@ -1,50 +1,36 @@
-"""统一封装 FastAPI 依赖注入所需的服务构造逻辑。
-"""
-from src.config import get_settings
-from src.services import (
-    EntityExtractionService,
-    FaissVectorStore,
-    IngestionService,
-    ModelConfigurationService,
-    OpenAiService,
-    QueryService,
-)
+"""为重构后的运行时容器提供 FastAPI 依赖注入辅助函数。"""
+
+from fastapi import HTTPException, Request
+
+from src.knowledge_base import KnowledgeBaseContainer
 
 
-def get_ingestion_service() -> IngestionService:
-    """构造文档导入服务。
-
-    Returns:
-        IngestionService: 已注入配置与依赖的导入服务实例。
-    """
-
-    settings = get_settings()
-    openai_service = OpenAiService(settings)
-    return IngestionService(
-        settings=settings,
-        openai_service=openai_service,
-        entity_extraction_service=EntityExtractionService(openai_service=openai_service),
-        vector_store=FaissVectorStore(settings),
-    )
+def get_kb_container(request: Request) -> KnowledgeBaseContainer:
+    container = getattr(request.app.state, "kb_container", None)
+    if container is None:
+        raise HTTPException(status_code=503, detail="Knowledge-base runtime is not initialized.")
+    return container
 
 
-def get_query_service() -> QueryService:
-    """构造问答检索服务。
-
-    Returns:
-        QueryService: 已注入配置与依赖的问答检索服务实例。
-    """
-
-    settings = get_settings()
-    return QueryService(
-        settings=settings,
-        openai_service=OpenAiService(settings),
-        vector_store=FaissVectorStore(settings),
-    )
+def get_model_config_service(request: Request):
+    return get_kb_container(request).model_config_service
 
 
-def get_model_config_service() -> ModelConfigurationService:
-    """Construct the model configuration service."""
+def get_import_service(request: Request):
+    return get_kb_container(request).import_service
 
-    settings = get_settings()
-    return ModelConfigurationService(settings)
+
+def get_search_service(request: Request):
+    return get_kb_container(request).search_service
+
+
+def get_graph_service(request: Request):
+    return get_kb_container(request).graph_service
+
+
+def get_source_service(request: Request):
+    return get_kb_container(request).source_service
+
+
+def get_openai_gateway(request: Request):
+    return get_kb_container(request).openai_gateway

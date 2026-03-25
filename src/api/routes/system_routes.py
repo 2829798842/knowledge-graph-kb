@@ -1,17 +1,12 @@
-"""提供系统健康检查相关接口。
-"""
+"""系统相关路由。"""
 
 from fastapi import APIRouter
 
-router = APIRouter(tags=["system"])
+from src.api.schemas import SystemHealthResponse
+
+router = APIRouter(prefix="/api/system", tags=["system"])
 
 
-@router.get("/health")
-def health() -> dict[str, str]:
-    """返回系统健康状态。
-
-    Returns:
-        dict[str, str]: 健康检查结果。
-    """
-
-    return {"status": "ok"}
+@router.get("/health", response_model=SystemHealthResponse)
+def health() -> SystemHealthResponse:
+    return SystemHealthResponse()

@@ -1,15 +1,17 @@
-"""Split route definitions by backend domain."""
+"""导出重构后 API 使用的路由对象。"""
 
-from src.api.routes.document_routes import router as document_router
-from src.api.routes.graph_routes import router as graph_router
+from src.api.routes.kb_graph_routes import router as kb_graph_router
+from src.api.routes.kb_import_routes import router as kb_import_router
+from src.api.routes.kb_search_routes import router as kb_search_router
+from src.api.routes.kb_source_routes import router as kb_source_router
 from src.api.routes.model_config_routes import router as model_config_router
-from src.api.routes.query_routes import router as query_router
 from src.api.routes.system_routes import router as system_router
 
 __all__ = [
-    "document_router",
-    "graph_router",
+    "kb_graph_router",
+    "kb_import_router",
+    "kb_search_router",
+    "kb_source_router",
     "model_config_router",
-    "query_router",
     "system_router",
 ]

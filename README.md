@@ -1,132 +1,179 @@
-# Knowledge Graph KB
+# 知识图谱知识库工作台
 
-Knowledge Graph KB 是一个本地优先的知识库项目，使用 FastAPI 提供后端服务，使用 React + Cytoscape.js 提供图谱工作台。系统支持导入文档、抽取实体关系、构建知识图谱、执行向量检索，并基于图谱重排结果生成问答答案。
+这是一个本地优先的知识库工作台项目，后端基于 FastAPI，前端基于 React，使用 SQLite 持久化业务数据，使用 FAISS 保存向量索引。项目支持文档导入、知识图谱浏览、问答检索、来源回溯，以及模型配置管理。
 
-## 当前能力
+## 主要能力
 
-- 文档导入：支持 `.txt`、`.pdf`、`.docx`
-- 图谱浏览：查看文档、切块、实体与关系
-- 手工连边：在前端直接创建和删除显式关系
-- FAISS 检索：使用本地 FAISS 索引做向量召回
-- 图谱问答：结合向量检索和个性化 PageRank 返回答案与引用
-- 模型配置页：前端可配置 API 供应商、Base URL、通用模型、嵌入模型
-- 连接测试：保存前可直接测试当前模型配置是否可用
-- 本地密钥加密：已保存的 API Key 会先加密再写入本地数据库
+- 导入 TXT、PDF、DOCX、XLSX、XLS、JSON 等数据源
+- 将内容切分、向量化，并写入统一知识库
+- 浏览实体、段落、来源和关系组成的知识图谱
+- 执行问答、实体检索、关系检索、来源检索、表格记录检索
+- 在前端保存模型配置，并对 API 连通性进行测试
+- 使用本地密钥文件加密保存模型 API Key
+
+## 当前架构
+
+- 后端接口统一挂在 `/api/system/*` 和 `/api/kb/*`
+- 运行时依赖装配入口位于 `src/knowledge_base/container.py`
+- 知识库运行数据统一存放在 `data/kb/`
+- 元数据、导入任务、图谱数据、来源数据、模型配置统一存放在 `data/kb/kb.sqlite3`
+- 向量索引统一存放在 `data/kb/vector_index/`
+- 已保存的模型 API Key 会先加密，再写入数据库
+- 用于加解密 API Key 的本地密钥文件位于 `data/kb/secrets/model_config.key`
+
+## 主要接口分组
+
+- `/api/system/health`
+- `/api/kb/config/model`
+- `/api/kb/imports/*`
+- `/api/kb/search/*`
+- `/api/kb/graph/*`
+- `/api/kb/sources/*`
+
+## 技术栈
+
+### 后端
+
+- FastAPI
+- SQLite
+- FAISS
+- OpenAI Python SDK
+- Pydantic Settings
+
+### 前端
+
+- React 18
+- Vite
+- TypeScript
+- TanStack Query
+- Cytoscape.js
 
 ## 快速开始
 
-### 1. 准备环境变量
-
-复制 `.env.example` 为 `.env`，然后按需修改：
-
-- `MODEL_PROVIDER`
-- `MODEL_BASE_URL`
-- `MODEL_CONFIG_SECRET_PATH`
-- `OPENAI_API_KEY`
-- `OPENAI_LLM_MODEL`
-- `OPENAI_EMBED_MODEL`
-- `DATABASE_URL`
-- `VECTOR_STORE_DIR`
-- `UPLOAD_DIR`
-- `FRONTEND_DIST_DIR`
-- `SERVER_HOST`
-- `SERVER_PORT`
-
-默认模型配置：
-
-- 通用模型：`gpt-5.4-mini`
-- 嵌入模型：`text-embedding-3-large`
-
-### 2. 安装后端依赖
+### 1. 安装后端依赖
 
 ```bash
 uv sync
 ```
 
-### 3. 安装前端依赖并构建
-
-```bash
-cd frontend
-pnpm install
-pnpm build
-```
-
-### 4. 启动服务
+### 2. 启动后端
 
 ```bash
 uv run python main.py
 ```
 
-默认地址：`http://localhost:8000`
+默认地址：
 
-## 开发命令
+```text
+http://localhost:8000
+```
 
-后端测试：
+### 3. 安装前端依赖
+
+```bash
+cd frontend
+pnpm install
+```
+
+### 4. 前端开发或构建
+
+开发模式：
+
+```bash
+cd frontend
+pnpm dev
+```
+
+生产构建：
+
+```bash
+cd frontend
+pnpm build
+```
+
+## 环境变量
+
+项目实际读取的是根目录下的 `.env` 文件，`.env.example` 仅作为示例模板。
+
+当前核心配置项如下：
+
+- `KB_DATA_DIR`：知识库运行数据根目录
+- `KB_DATABASE_NAME`：SQLite 数据库文件名
+- `KB_VECTOR_INDEX_DIR_NAME`：向量索引目录名
+- `KB_UPLOAD_DIR_NAME`：上传文件目录名
+- `KB_SECRET_DIR_NAME`：本地密钥目录名
+- `MODEL_CONFIG_SECRET_NAME`：模型配置加密密钥文件名
+- `KB_SCAN_ROOTS`：允许扫描导入的根目录列表
+- `FRONTEND_DIST_DIR`：前端构建产物目录
+- `MODEL_PROVIDER`：默认模型提供商
+- `MODEL_BASE_URL`：默认模型 Base URL
+- `OPENAI_API_KEY`：默认 API Key
+- `OPENAI_LLM_MODEL`：默认通用模型
+- `OPENAI_EMBED_MODEL`：默认嵌入模型
+- `SERVER_HOST`：服务监听地址
+- `SERVER_PORT`：服务端口
+- `LOG_LEVEL`：日志级别
+
+## 数据与密钥存储
+
+当前真实使用的存储结构如下：
+
+```text
+data/kb/
+|-- kb.sqlite3                 # 主数据库
+|-- vector_index/              # 向量索引目录
+|-- uploads/                   # 导入文件目录
+`-- secrets/
+    `-- model_config.key       # API Key 加解密密钥文件
+```
+
+模型 API Key 的优先级如下：
+
+1. 如果前端“模型配置”里保存了 API Key，则优先使用数据库中的已保存配置
+2. 否则回退到 `.env` 中的 `OPENAI_API_KEY`
+
+## 验证命令
+
+### 后端测试
 
 ```bash
 uv run pytest -q
 ```
 
-前端测试：
+### 前端测试
 
 ```bash
 cd frontend
 pnpm test
 ```
 
-前端构建：
+### 前端构建检查
 
 ```bash
 cd frontend
 pnpm build
 ```
 
-## 模型配置说明
-
-前端工作台内置模型配置面板，支持：
-
-- 选择 API 供应商：`OpenAI`、`OpenRouter`、`SiliconFlow`、自定义兼容供应商
-- 配置 `Base URL`
-- 分别配置通用模型与嵌入模型
-- 保存或清除本地密钥
-- 先测试连接，再决定是否保存
-
-注意：
-
-- 已保存的 API Key 会使用本地密钥文件加密后再落库
-- 如果切换了嵌入模型，现有 FAISS 索引会被清空，需要重新导入文档
-
-## 项目结构
+## 目录结构
 
 ```text
 knowledge-graph-kb/
 |-- frontend/
-|   |-- src/
-|   |   |-- features/knowledge_base/
-|   |   |-- styles/
-|   |   `-- theme/
-|   |-- package.json
-|   `-- vite.config.ts
+|   `-- src/features/knowledge_base/
 |-- src/
-|   |-- api/                  # FastAPI 路由与依赖注入
-|   |-- config/               # 应用配置与路径解析
-|   |-- schemas/              # 请求/响应模型与抽取模型
-|   |-- data/                 # SQLModel 数据模型与数据库接入
-|   |-- services/             # 导入、检索、图谱、模型配置等服务
-|   |-- utils/                # 通用工具与本地加密工具
-|   |-- web/                  # 前端静态资源托管
-|   `-- app_factory.py
+|   |-- api/                   # HTTP 路由、依赖注入、请求响应模型
+|   |-- config/                # 环境变量与路径解析
+|   |-- knowledge_base/
+|   |   |-- container.py       # 运行时依赖装配入口
+|   |   |-- application/       # 应用服务层
+|   |   |-- domain/            # 领域模型与公共定义
+|   |   |-- importing/         # 导入、解析、投影、规范化逻辑
+|   |   `-- infrastructure/    # SQLite、FAISS、模型网关实现
+|   |-- utils/                 # 通用工具
+|   `-- web/                   # 前端静态资源托管
 |-- tests/
+|-- data/kb/
+|-- .env.example
 |-- main.py
-|-- pyproject.toml
-`-- pnpm-workspace.yaml
+`-- pyproject.toml
 ```
-
-## 检索与问答流程
-
-1. 导入文档并解析正文
-2. 将正文切块并生成嵌入向量
-3. 把向量写入 FAISS，把实体关系写入图数据库表
-4. 问答时先做向量召回
-5. 再对图谱子图执行个性化 PageRank 重排
-6. 最后用通用模型基于上下文生成答案与引用
