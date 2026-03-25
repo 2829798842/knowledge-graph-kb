@@ -113,12 +113,17 @@ export interface ManualRelationRecord {
   updated_at: string;
 }
 
+export type ParagraphRenderKind = 'text' | 'row_record' | 'sheet_summary';
+
 export interface AnswerCitationRecord {
   paragraph_id: string;
   source_id: string;
   source_name: string;
   excerpt: string;
   score: number;
+  render_kind: ParagraphRenderKind;
+  rendered_html: string | null;
+  render_metadata: Record<string, unknown>;
 }
 
 export interface AnswerExecutionRecord {
@@ -281,6 +286,9 @@ export interface ParagraphRecord {
   token_count: number;
   vector_state: string;
   metadata: Record<string, unknown>;
+  render_kind: ParagraphRenderKind;
+  rendered_html: string | null;
+  render_metadata: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }

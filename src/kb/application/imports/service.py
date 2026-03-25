@@ -175,6 +175,14 @@ class ImportPipeline:
         )
         spreadsheet_document = self._resolve_spreadsheet_document(item=item, file_type=file_type)
         raw_text = self._resolve_text(item=item, spreadsheet_document=spreadsheet_document)
+        logger.debug(
+            "导入文件解析完成：job_id=%s file_id=%s source_name=%s raw_text_length=%s has_spreadsheet_document=%s",
+            job_id,
+            file_id,
+            source_name,
+            len(raw_text),
+            spreadsheet_document is not None,
+        )
         if not raw_text.strip() and not item.get("structured_paragraphs"):
             logger.warning(
                 "导入文件没有可提取文本：job_id=%s file_id=%s source_name=%s",
@@ -248,6 +256,14 @@ class ImportPipeline:
             len(paragraph_payloads),
             strategy,
         )
+        logger.debug(
+            "段落载荷明细：job_id=%s file_id=%s source_name=%s positions=%s knowledge_types=%s",
+            job_id,
+            file_id,
+            source_name,
+            [int(paragraph.get("position") or 0) for paragraph in paragraph_payloads[:12]],
+            [str(paragraph.get("knowledge_type") or "") for paragraph in paragraph_payloads[:12]],
+        )
         chunk_rows = self.job_store.create_job_chunks(
             job_id=job_id,
             file_id=file_id,
@@ -291,7 +307,23 @@ class ImportPipeline:
 
         self.job_store.update_job_file(file_id, current_step="embedding", progress=36.0)
         on_progress(36.0, "embedding", f"正在为 {len(paragraph_rows)} 个段落生成向量")
+        logger.debug(
+            "导入向量生成开始：job_id=%s file_id=%s source_id=%s paragraph_count=%s total_char_count=%s",
+            job_id,
+            file_id,
+            str(source["id"]),
+            len(paragraph_rows),
+            sum(len(str(paragraph["content"])) for paragraph in paragraph_rows),
+        )
         embeddings = self.gateway.generate_embeddings([str(paragraph["content"]) for paragraph in paragraph_rows])
+        logger.debug(
+            "导入向量生成完成：job_id=%s file_id=%s source_id=%s vector_count=%s dimension=%s",
+            job_id,
+            file_id,
+            str(source["id"]),
+            len(embeddings),
+            len(embeddings[0]) if embeddings else 0,
+        )
         vector_records = [
             VectorIndexRecord(
                 paragraph_id=str(paragraph["id"]),
@@ -591,6 +623,20 @@ class ImportPipeline:
             len(paragraph_rows),
             len(windows),
         )
+        logger.debug(
+            "实体关系抽取窗口明细：document_name=%s file_id=%s windows=%s",
+            document_name,
+            file_id,
+            [
+                {
+                    "index": window.index,
+                    "chunk_count": len(window.chunk_indexes),
+                    "text_length": len(window.text),
+                    "token_count": count_tokens(window.text),
+                }
+                for window in windows
+            ],
+        )
         partial_results: list[dict[str, Any]] = []
         extraction_warning: str | None = None
         for window_index, window in enumerate(windows, start=1):
@@ -600,13 +646,30 @@ class ImportPipeline:
             file_progress = round(52.0 + 30.0 * progress_ratio, 2)
             self.job_store.update_job_file(file_id, current_step="extracting", progress=file_progress)
             on_progress(file_progress, "extracting", f"{document_name} 正在抽取实体关系：{window_index}/{total_windows}")
+            logger.debug(
+                "实体关系抽取窗口开始：document_name=%s file_id=%s window_index=%s total_windows=%s chunk_count=%s text_length=%s token_count=%s",
+                document_name,
+                file_id,
+                window_index,
+                total_windows,
+                len(window.chunk_indexes),
+                len(window.text),
+                count_tokens(window.text),
+            )
             try:
-                partial_results.append(
-                    self.gateway.extract_document_graph(
-                        document_name=document_name,
-                        text=window.text,
-                        window_label=f"window-{window.index}",
-                    )
+                partial_result = self.gateway.extract_document_graph(
+                    document_name=document_name,
+                    text=window.text,
+                    window_label=f"window-{window.index}",
+                )
+                partial_results.append(partial_result)
+                logger.debug(
+                    "实体关系抽取窗口完成：document_name=%s file_id=%s window_index=%s entity_count=%s relation_count=%s",
+                    document_name,
+                    file_id,
+                    window_index,
+                    len(list(partial_result.get("entities") or [])),
+                    len(list(partial_result.get("relations") or [])),
                 )
             except ImportCancelledError:
                 raise

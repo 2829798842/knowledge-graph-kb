@@ -1,9 +1,11 @@
 /**
- * 来源浏览面板。
+ * 来源浏览面板
  */
 
-import { useDeferredValue, useEffect, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 
+import { ParagraphEvidencePreview } from '../../shared/components/paragraph_evidence_preview';
 import {
   get_input_mode_label,
   get_knowledge_type_label,
@@ -31,8 +33,9 @@ export function SourceBrowserPanel() {
 
   const [source_keyword, set_source_keyword] = useState<string>('');
   const [paragraph_keyword, set_paragraph_keyword] = useState<string>('');
-  const deferred_source_keyword: string = useDeferredValue(source_keyword.trim().toLowerCase());
-  const deferred_paragraph_keyword: string = useDeferredValue(paragraph_keyword.trim().toLowerCase());
+  const deferred_source_keyword = useDeferredValue(source_keyword.trim().toLowerCase());
+  const deferred_paragraph_keyword = useDeferredValue(paragraph_keyword.trim().toLowerCase());
+  const paragraph_scroll_ref = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!selected_source_browser_id && sources.length) {
@@ -44,7 +47,7 @@ export function SourceBrowserPanel() {
     if (!deferred_source_keyword) {
       return true;
     }
-    const haystack: string = `${source.name} ${source.summary ?? ''} ${source.source_kind} ${source.input_mode}`.toLowerCase();
+    const haystack = `${source.name} ${source.summary ?? ''} ${source.source_kind} ${source.input_mode}`.toLowerCase();
     return haystack.includes(deferred_source_keyword);
   });
 
@@ -55,12 +58,20 @@ export function SourceBrowserPanel() {
     return paragraph.content.toLowerCase().includes(deferred_paragraph_keyword);
   });
 
+  const paragraph_virtualizer = useVirtualizer({
+    count: filtered_paragraphs.length,
+    getScrollElement: () => paragraph_scroll_ref.current,
+    estimateSize: () => 280,
+    overscan: 6,
+    measureElement: (element) => element?.getBoundingClientRect().height ?? 0,
+  });
+
   return (
     <section className='kb-panel'>
       <header className='kb-section-header'>
         <div>
           <h2>来源浏览</h2>
-          <p>从图谱反查原始来源、元数据和段落证据。</p>
+          <p>从图谱回查原始来源 元数据 与段落证据</p>
         </div>
       </header>
 
@@ -68,12 +79,12 @@ export function SourceBrowserPanel() {
         <aside className='kb-sidebar kb-source-sidebar'>
           <div className='kb-filter-card'>
             <h3>来源目录</h3>
-            <p>{`${filtered_sources.length} 个来源符合当前筛选。`}</p>
+            <p>{`${filtered_sources.length} 个来源符合当前筛选`}</p>
             <label className='kb-form-field'>
               <span>来源关键词</span>
               <input
                 onChange={(event) => set_source_keyword(event.target.value)}
-                placeholder='按名称、摘要、类型或导入方式搜索'
+                placeholder='按名称 摘要 类型或导入方式搜索'
                 type='search'
                 value={source_keyword}
               />
@@ -97,7 +108,7 @@ export function SourceBrowserPanel() {
                 </div>
               </button>
             ))}
-            {!filtered_sources.length ? <div className='kb-empty-card'>没有匹配的来源。</div> : null}
+            {!filtered_sources.length ? <div className='kb-empty-card'>没有匹配的来源</div> : null}
           </div>
         </aside>
 
@@ -113,11 +124,11 @@ export function SourceBrowserPanel() {
                   <span className='kb-meta-pill'>{`关系 ${source_detail.relation_count}`}</span>
                   <span className='kb-meta-pill'>{get_strategy_label(source_detail.source.strategy)}</span>
                 </div>
-                <p>{source_detail.source.summary || '该来源暂时没有摘要。'}</p>
+                <p>{source_detail.source.summary || '该来源暂时没有摘要'}</p>
                 <pre>{JSON.stringify(source_detail.source.metadata, null, 2)}</pre>
               </>
             ) : (
-              <span>选择一个来源以查看元数据和段落统计。</span>
+              <span>选择一个来源以查看元数据和段落统计</span>
             )}
           </div>
 
@@ -125,7 +136,7 @@ export function SourceBrowserPanel() {
             <div className='kb-section-header'>
               <div>
                 <h3>段落阅读</h3>
-                <p>在当前来源内搜索段落，并回到图谱上下文继续查看。</p>
+                <p>在当前来源内搜索段落 并回到图谱上下文继续查看</p>
               </div>
             </div>
 
@@ -139,22 +150,51 @@ export function SourceBrowserPanel() {
               />
             </label>
 
-            <div className='kb-paragraph-list'>
-              {filtered_paragraphs.map((paragraph) => (
-                <div className='kb-inline-card' key={paragraph.id}>
-                  <strong>{`#${paragraph.position + 1}`}</strong>
-                  <span>{paragraph.content}</span>
-                  <div className='kb-meta-strip'>
-                    <span className='kb-meta-pill'>{get_knowledge_type_label(paragraph.knowledge_type)}</span>
-                    <span className='kb-meta-pill'>{`词元 ${paragraph.token_count}`}</span>
-                    <span className='kb-meta-pill'>{get_vector_state_label(paragraph.vector_state)}</span>
-                  </div>
-                  <button className='kb-secondary-button' onClick={() => focus_paragraph(paragraph.id)} type='button'>
-                    在图谱中定位
-                  </button>
+            <div className='kb-paragraph-list' ref={paragraph_scroll_ref}>
+              {filtered_paragraphs.length ? (
+                <div
+                  className='kb-virtual-list-spacer'
+                  style={{ height: `${paragraph_virtualizer.getTotalSize()}px`, position: 'relative' }}
+                >
+                  {paragraph_virtualizer.getVirtualItems().map((virtual_item) => {
+                    const paragraph = filtered_paragraphs[virtual_item.index];
+                    return (
+                      <div
+                        className='kb-virtual-list-item'
+                        data-index={virtual_item.index}
+                        key={paragraph.id}
+                        ref={paragraph_virtualizer.measureElement}
+                        style={{
+                          left: 0,
+                          position: 'absolute',
+                          top: 0,
+                          transform: `translateY(${virtual_item.start}px)`,
+                          width: '100%',
+                        }}
+                      >
+                        <div className='kb-inline-card'>
+                          <strong>{`#${paragraph.position + 1}`}</strong>
+                          <ParagraphEvidencePreview
+                            render_kind={paragraph.render_kind}
+                            rendered_html={paragraph.rendered_html}
+                            text_content={paragraph.content}
+                          />
+                          <div className='kb-meta-strip'>
+                            <span className='kb-meta-pill'>{get_knowledge_type_label(paragraph.knowledge_type)}</span>
+                            <span className='kb-meta-pill'>{`词元 ${paragraph.token_count}`}</span>
+                            <span className='kb-meta-pill'>{get_vector_state_label(paragraph.vector_state)}</span>
+                          </div>
+                          <button className='kb-secondary-button' onClick={() => focus_paragraph(paragraph.id)} type='button'>
+                            在图谱中定位
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              ))}
-              {!filtered_paragraphs.length ? <span>当前来源下没有匹配段落。</span> : null}
+              ) : (
+                <span>当前来源下没有匹配段落</span>
+              )}
             </div>
           </div>
         </div>

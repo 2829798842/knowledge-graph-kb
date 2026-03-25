@@ -40,9 +40,22 @@ class VectorParagraphRetriever:
             logger.info("向量检索跳过：问题为空。")
             return [], self._trace(executed=False, skipped_reason="empty_query", start_time=start_time, hits=[])
 
+        logger.debug(
+            "向量检索开始：query_length=%s top_k=%s source_scope_count=%s paragraph_scope_count=%s",
+            len(normalized_query),
+            request.top_k,
+            len(request.source_ids or []),
+            len(paragraph_ids or []),
+        )
         embedding_start = perf_counter()
         query_embedding = self.gateway.generate_embeddings([normalized_query])[0]
         embedding_ms = round((perf_counter() - embedding_start) * 1000.0, 2)
+        logger.debug(
+            "查询向量生成完成：query_length=%s dimension=%s embedding_ms=%s",
+            len(normalized_query),
+            len(query_embedding),
+            embedding_ms,
+        )
 
         search_start = perf_counter()
         results = self.vector.search(
@@ -71,6 +84,12 @@ class VectorParagraphRetriever:
             )
             for index, result in enumerate(results, start=1)
         ]
+        logger.debug(
+            "向量检索结果明细：query_length=%s hit_count=%s top_paragraph_ids=%s",
+            len(normalized_query),
+            len(hits),
+            [hit.paragraph_id for hit in hits[:5]],
+        )
         logger.info(
             "向量检索完成：query_length=%s hit_count=%s embed_ms=%s vector_ms=%s source_scope_count=%s paragraph_scope_count=%s",
             len(normalized_query),

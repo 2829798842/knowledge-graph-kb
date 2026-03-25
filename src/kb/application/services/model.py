@@ -41,6 +41,14 @@ class ModelConfigService:
         """解析当前生效的运行时配置。"""
 
         runtime_config, _ = self._resolve_runtime_configuration_with_notice()
+        logger.debug(
+            "运行时模型配置已解析：provider=%s base_url=%s llm_model=%s embedding_model=%s api_key_source=%s",
+            runtime_config.provider,
+            runtime_config.base_url,
+            runtime_config.llm_model,
+            runtime_config.embedding_model,
+            runtime_config.api_key_source,
+        )
         return runtime_config
 
     def _resolve_runtime_configuration_with_notice(self) -> tuple[RuntimeModelConfiguration, str | None]:
@@ -190,6 +198,16 @@ class ModelConfigService:
             llm_model,
             embedding_model,
             api_key_source,
+        )
+        logger.debug(
+            "模型测试配置参数：provider=%s base_url=%s llm_model=%s embedding_model=%s api_key_source=%s use_saved_api_key=%s explicit_api_key=%s",
+            provider,
+            base_url,
+            llm_model,
+            embedding_model,
+            api_key_source,
+            use_saved_api_key,
+            bool(explicit_api_key),
         )
         return RuntimeModelConfiguration(
             provider=provider,

@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 
+import { ParagraphEvidencePreview } from '../../shared/components/paragraph_evidence_preview';
 import { QUERY_MODE_OPTIONS } from '../../shared/config/ui_constants';
 import type {
   AnswerExecutionRecord,
@@ -295,7 +296,11 @@ export function QueryStudioPanel() {
                   {active_answer_message?.citations.map((citation) => (
                     <div className='kb-inline-card' key={citation.paragraph_id}>
                       <strong>{citation.source_name}</strong>
-                      <span>{citation.excerpt}</span>
+                      <ParagraphEvidencePreview
+                        render_kind={citation.render_kind}
+                        rendered_html={citation.rendered_html}
+                        text_content={citation.excerpt}
+                      />
                       <span>{`得分 ${citation.score.toFixed(2)}`}</span>
                       <button className='kb-secondary-button' onClick={() => focus_paragraph(citation.paragraph_id)} type='button'>
                         查看段落

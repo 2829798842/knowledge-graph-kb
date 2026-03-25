@@ -3,6 +3,7 @@
 from collections.abc import Callable
 import json
 import re
+from time import perf_counter
 from typing import Any
 
 from openai import (
@@ -97,6 +98,8 @@ class OpenAiGateway:
         if not texts:
             return []
         runtime_config = self.runtime_config_provider()
+        total_char_count = sum(len(text) for text in texts)
+        max_char_count = max((len(text) for text in texts), default=0)
         logger.info(
             "开始请求文本向量：text_count=%s batch_size=%s provider=%s embedding_model=%s",
             len(texts),
@@ -104,11 +107,30 @@ class OpenAiGateway:
             runtime_config.provider,
             runtime_config.embedding_model,
         )
+        logger.debug(
+            "文本向量请求参数：text_count=%s total_char_count=%s max_char_count=%s provider=%s embedding_model=%s",
+            len(texts),
+            total_char_count,
+            max_char_count,
+            runtime_config.provider,
+            runtime_config.embedding_model,
+        )
         client = self._client_for(runtime_config)
         batch_size = max(1, self.settings.embedding_batch_size)
         embeddings: list[list[float]] = []
+        request_start = perf_counter()
         for start_index in range(0, len(texts), batch_size):
             batch_texts = texts[start_index : start_index + batch_size]
+            batch_index = start_index // batch_size + 1
+            batch_char_count = sum(len(text) for text in batch_texts)
+            batch_start = perf_counter()
+            logger.debug(
+                "文本向量批次开始：batch_index=%s start_index=%s batch_text_count=%s batch_char_count=%s",
+                batch_index,
+                start_index,
+                len(batch_texts),
+                batch_char_count,
+            )
             try:
                 response = client.embeddings.create(
                     model=runtime_config.embedding_model,
@@ -116,7 +138,21 @@ class OpenAiGateway:
                 )
             except Exception as exc:  # noqa: BLE001
                 raise self._translate_client_error(exc) from exc
-            embeddings.extend([[float(value) for value in item.embedding] for item in response.data])
+            batch_embeddings = [[float(value) for value in item.embedding] for item in response.data]
+            embeddings.extend(batch_embeddings)
+            logger.debug(
+                "文本向量批次完成：batch_index=%s vector_count=%s dimension=%s elapsed_ms=%s",
+                batch_index,
+                len(batch_embeddings),
+                len(batch_embeddings[0]) if batch_embeddings else 0,
+                round((perf_counter() - batch_start) * 1000.0, 2),
+            )
+        logger.debug(
+            "文本向量请求完成：text_count=%s vector_count=%s total_ms=%s",
+            len(texts),
+            len(embeddings),
+            round((perf_counter() - request_start) * 1000.0, 2),
+        )
         return embeddings
 
     def extract_document_graph(
@@ -138,6 +174,7 @@ class OpenAiGateway:
         """
 
         runtime_config = self.runtime_config_provider()
+        truncated_text = text[:EXTRACTION_TEXT_LIMIT]
         logger.info(
             "开始请求实体关系抽取：document_name=%s window_label=%s provider=%s llm_model=%s",
             document_name,
@@ -145,6 +182,16 @@ class OpenAiGateway:
             runtime_config.provider,
             runtime_config.llm_model,
         )
+        logger.debug(
+            "实体关系抽取请求参数：document_name=%s window_label=%s text_length=%s truncated_length=%s provider=%s llm_model=%s",
+            document_name,
+            window_label,
+            len(text),
+            len(truncated_text),
+            runtime_config.provider,
+            runtime_config.llm_model,
+        )
+        request_start = perf_counter()
         raw_output = self._chat_completion(
             runtime_config,
             system_prompt=(
@@ -157,8 +204,15 @@ class OpenAiGateway:
             user_prompt=(
                 f"Document name: {document_name}\n"
                 f"Window label: {window_label}\n\n"
-                f"Document text:\n{text[:EXTRACTION_TEXT_LIMIT]}"
+                f"Document text:\n{truncated_text}"
             ),
+        )
+        logger.debug(
+            "实体关系抽取响应返回：document_name=%s window_label=%s raw_output_length=%s elapsed_ms=%s",
+            document_name,
+            window_label,
+            len(raw_output),
+            round((perf_counter() - request_start) * 1000.0, 2),
         )
         payload = self._load_json(raw_output)
         entities = [
@@ -181,6 +235,13 @@ class OpenAiGateway:
             for relation in payload.get("relations", [])
             if str(relation.get("source", "")).strip() and str(relation.get("target", "")).strip()
         ]
+        logger.debug(
+            "实体关系抽取结果整理完成：document_name=%s window_label=%s entity_count=%s relation_count=%s",
+            document_name,
+            window_label,
+            len(entities),
+            len(relations),
+        )
         return {"entities": entities, "relations": relations}
 
     def generate_answer(
@@ -215,6 +276,8 @@ class OpenAiGateway:
             if serialized_turns:
                 history_text = f"{ANSWER_HISTORY_PREFIX}{serialized_turns}\n\n"
         runtime_config = self.runtime_config_provider()
+        context_char_count = sum(len(block.get("excerpt", "")) for block in context_blocks)
+        history_char_count = sum(len(turn.get("content", "")) for turn in (conversation_turns or []))
         logger.info(
             "开始请求问答生成：query_length=%s context_block_count=%s history_turn_count=%s provider=%s llm_model=%s",
             len(query),
@@ -223,11 +286,29 @@ class OpenAiGateway:
             runtime_config.provider,
             runtime_config.llm_model,
         )
-        return self._chat_completion(
+        logger.debug(
+            "问答生成请求参数：query_length=%s context_block_count=%s context_char_count=%s history_turn_count=%s history_char_count=%s provider=%s llm_model=%s",
+            len(query),
+            len(context_blocks),
+            context_char_count,
+            len(conversation_turns or []),
+            history_char_count,
+            runtime_config.provider,
+            runtime_config.llm_model,
+        )
+        request_start = perf_counter()
+        answer_text = self._chat_completion(
             runtime_config,
             system_prompt=ANSWER_SYSTEM_PROMPT,
             user_prompt=f"{history_text}User query: {query}\n\nContext snippets:\n{context_text}{ANSWER_USER_PROMPT_SUFFIX}",
         ).strip()
+        logger.debug(
+            "问答生成响应完成：query_length=%s answer_length=%s elapsed_ms=%s",
+            len(query),
+            len(answer_text),
+            round((perf_counter() - request_start) * 1000.0, 2),
+        )
+        return answer_text
 
     def test_connection(self, runtime_config: RuntimeModelConfiguration) -> tuple[bool, bool]:
         """测试通用模型与嵌入模型连通性。
@@ -251,14 +332,34 @@ class OpenAiGateway:
         embedding_ok = False
         llm_ok = False
         try:
+            embedding_start = perf_counter()
+            logger.debug(
+                "模型连通性嵌入测试开始：provider=%s embedding_model=%s base_url=%s",
+                runtime_config.provider,
+                runtime_config.embedding_model,
+                runtime_config.base_url,
+            )
             response = client.embeddings.create(
                 model=runtime_config.embedding_model,
                 input=[CONNECTION_TEST_INPUT],
             )
             embedding_ok = bool(response.data)
+            logger.debug(
+                "模型连通性嵌入测试完成：provider=%s embedding_ok=%s elapsed_ms=%s",
+                runtime_config.provider,
+                embedding_ok,
+                round((perf_counter() - embedding_start) * 1000.0, 2),
+            )
         except Exception:  # noqa: BLE001
             embedding_ok = False
         try:
+            llm_start = perf_counter()
+            logger.debug(
+                "模型连通性通用模型测试开始：provider=%s llm_model=%s base_url=%s",
+                runtime_config.provider,
+                runtime_config.llm_model,
+                runtime_config.base_url,
+            )
             llm_response = self._chat_completion(
                 runtime_config,
                 system_prompt="Reply with the single word ok.",
@@ -266,6 +367,12 @@ class OpenAiGateway:
                 max_tokens=8,
             )
             llm_ok = bool(llm_response.strip())
+            logger.debug(
+                "模型连通性通用模型测试完成：provider=%s llm_ok=%s elapsed_ms=%s",
+                runtime_config.provider,
+                llm_ok,
+                round((perf_counter() - llm_start) * 1000.0, 2),
+            )
         except Exception:  # noqa: BLE001
             llm_ok = False
         logger.info(
@@ -308,6 +415,13 @@ class OpenAiGateway:
             else:
                 self._client = OpenAI(api_key=runtime_config.api_key)
             self._client_signature = signature
+        else:
+            logger.debug(
+                "复用模型客户端：provider=%s base_url=%s api_key_source=%s",
+                runtime_config.provider,
+                runtime_config.base_url,
+                runtime_config.api_key_source,
+            )
         return self._client
 
     def _chat_completion(
@@ -339,12 +453,31 @@ class OpenAiGateway:
         }
         if max_tokens is not None:
             request_kwargs["max_tokens"] = max_tokens
+        logger.debug(
+            "聊天补全请求开始：provider=%s llm_model=%s message_count=%s system_prompt_length=%s user_prompt_length=%s max_tokens=%s",
+            runtime_config.provider,
+            runtime_config.llm_model,
+            len(request_kwargs["messages"]),
+            len(system_prompt),
+            len(user_prompt),
+            max_tokens,
+        )
+        request_start = perf_counter()
         try:
             response = self._client_for(runtime_config).chat.completions.create(**request_kwargs)
         except Exception as exc:  # noqa: BLE001
             raise self._translate_client_error(exc) from exc
         message_content: Any = response.choices[0].message.content if response.choices else ""
-        return self._message_content_to_text(message_content)
+        response_text = self._message_content_to_text(message_content)
+        logger.debug(
+            "聊天补全请求完成：provider=%s llm_model=%s choice_count=%s output_length=%s elapsed_ms=%s",
+            runtime_config.provider,
+            runtime_config.llm_model,
+            len(response.choices or []),
+            len(response_text),
+            round((perf_counter() - request_start) * 1000.0, 2),
+        )
+        return response_text
 
     def _message_content_to_text(self, content: Any) -> str:
         """将 SDK 消息内容统一转换为文本。

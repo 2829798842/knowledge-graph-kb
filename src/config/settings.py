@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     )
     server_host: str = Field(default="0.0.0.0", validation_alias=AliasChoices("SERVER_HOST"))
     server_port: int = Field(default=8000, validation_alias=AliasChoices("SERVER_PORT"))
-    log_level: str = Field(default="INFO", validation_alias=AliasChoices("LOG_LEVEL"))
+    log_level: str = Field(default="DEBUG", validation_alias=AliasChoices("LOG_LEVEL"))
     model_provider: str = Field(
         default="openai",
         validation_alias=AliasChoices("MODEL_PROVIDER", "API_PROVIDER"),

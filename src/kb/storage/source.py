@@ -1,14 +1,18 @@
-"""来源存储。"""
+"""来源存储"""
 
 from typing import Any
 from uuid import uuid4
 
+from src.utils.logger import get_logger
+
 from ..database.sqlite import SQLiteGateway
 from .common import utc_now_iso
 
+logger = get_logger(__name__)
+
 
 class SourceStore:
-    """负责来源与段落的持久化，并提供来源详情读取能力。"""
+    """负责来源与段落的持久化 并提供来源详情读取能力"""
 
     def __init__(self, gateway: SQLiteGateway) -> None:
         self.gateway = gateway
@@ -147,13 +151,33 @@ class SourceStore:
     def add_paragraphs(self, *, source_id: str, paragraphs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         now = utc_now_iso()
         rows: list[dict[str, Any]] = []
+        normalized_paragraphs = self._normalize_paragraph_positions(paragraphs)
+        logger.debug(
+            "开始写入来源段落：source_id=%s paragraph_count=%s raw_positions=%s normalized_positions=%s",
+            source_id,
+            len(paragraphs),
+            [paragraph.get("position") for paragraph in paragraphs[:20]],
+            [paragraph.get("position") for paragraph in normalized_paragraphs[:20]],
+        )
         with self.gateway.transaction() as connection:
-            for position, paragraph in enumerate(paragraphs, start=1):
+            existing_row = connection.execute(
+                "SELECT COUNT(*) AS paragraph_count FROM paragraphs WHERE source_id = ?",
+                (source_id,),
+            ).fetchone()
+            existing_count = int(existing_row["paragraph_count"] or 0) if existing_row else 0
+            if existing_count > 0:
+                logger.warning(
+                    "检测到来源已存在旧段落 将先清理后重写 source_id=%s existing_count=%s",
+                    source_id,
+                    existing_count,
+                )
+                connection.execute("DELETE FROM paragraphs WHERE source_id = ?", (source_id,))
+            for paragraph in normalized_paragraphs:
                 paragraph_id = str(uuid4())
                 row = {
                     "id": paragraph_id,
                     "source_id": source_id,
-                    "position": int(paragraph.get("position") or position),
+                    "position": int(paragraph["position"]),
                     "content": str(paragraph["content"]),
                     "knowledge_type": str(paragraph.get("knowledge_type") or "mixed"),
                     "token_count": int(paragraph.get("token_count") or 0),
@@ -184,7 +208,34 @@ class SourceStore:
                     ),
                 )
                 rows.append(row)
+        logger.debug(
+            "来源段落写入完成：source_id=%s paragraph_count=%s position_range=%s",
+            source_id,
+            len(rows),
+            (
+                int(rows[0]["position"]) if rows else 0,
+                int(rows[-1]["position"]) if rows else 0,
+            ),
+        )
         return rows
+
+    def _normalize_paragraph_positions(self, paragraphs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        ranked_rows: list[tuple[int, int, dict[str, Any]]] = []
+        for index, paragraph in enumerate(paragraphs):
+            explicit_position = paragraph.get("position")
+            if explicit_position is None:
+                sort_position = index
+            else:
+                sort_position = int(explicit_position)
+            ranked_rows.append((sort_position, index, dict(paragraph)))
+        ranked_rows.sort(key=lambda item: (item[0], item[1]))
+        return [
+            {
+                **paragraph,
+                "position": position,
+            }
+            for position, (_, _, paragraph) in enumerate(ranked_rows, start=1)
+        ]
 
     def update_paragraph(
         self,
@@ -227,7 +278,7 @@ class SourceStore:
         )
 
     def list_source_paragraphs(self, source_id: str) -> list[dict[str, Any]]:
-        """兼容旧调用的来源段落列表别名。"""
+        """兼容旧调用的来源段落列表别名"""
 
         return self.list_paragraphs_for_source(source_id)
 

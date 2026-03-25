@@ -166,7 +166,11 @@ class GraphService:
                 }
             )
 
-        return {"nodes": nodes, "edges": structural_edges + self._apply_density_filter(semantic_edges, density=density)}
+        projected_edges = structural_edges + self._apply_density_filter(semantic_edges, density=density)
+        return {
+            "nodes": nodes,
+            "edges": self._prune_dangling_edges(projected_edges, node_ids=visible_node_ids),
+        }
 
     def _is_graph_visible_source(self, source: dict[str, Any]) -> bool:
         return str(source.get("status") or "").strip().lower() in {"ready", "partial"}
@@ -419,6 +423,13 @@ class GraphService:
             return edges
         edge_limit = max(1, round(len(edges) * normalized_density / 100))
         return sorted(edges, key=lambda edge: edge["weight"], reverse=True)[:edge_limit]
+
+    def _prune_dangling_edges(self, edges: list[dict[str, Any]], *, node_ids: set[str]) -> list[dict[str, Any]]:
+        return [
+            edge
+            for edge in edges
+            if str(edge.get("source") or "") in node_ids and str(edge.get("target") or "") in node_ids
+        ]
 
     def _paragraph_label(self, content: str) -> str:
         compact = " ".join(content.split())

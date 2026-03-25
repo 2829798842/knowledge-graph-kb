@@ -3,7 +3,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
 import {
   create_manual_relation,
@@ -27,6 +27,36 @@ function has_node(graph: KnowledgeGraphRecord, node_id: string): boolean {
 
 function has_edge(graph: KnowledgeGraphRecord, edge_id: string): boolean {
   return graph.edges.some((edge) => edge.id === edge_id);
+}
+
+const EMPTY_GRAPH: KnowledgeGraphRecord = { nodes: [], edges: [] };
+
+interface NormalizedGraphState {
+  graph: KnowledgeGraphRecord;
+  dropped_edge_count: number;
+}
+
+function normalize_graph(graph: KnowledgeGraphRecord): NormalizedGraphState {
+  const normalized_nodes = Array.isArray(graph.nodes) ? graph.nodes.filter(Boolean) : [];
+  const visible_node_ids = new Set(normalized_nodes.map((node) => node.id));
+  const normalized_edges = [];
+  let dropped_edge_count = 0;
+
+  for (const edge of Array.isArray(graph.edges) ? graph.edges : []) {
+    if (!edge || !visible_node_ids.has(edge.source) || !visible_node_ids.has(edge.target)) {
+      dropped_edge_count += 1;
+      continue;
+    }
+    normalized_edges.push(edge);
+  }
+
+  return {
+    graph: {
+      nodes: normalized_nodes,
+      edges: normalized_edges,
+    },
+    dropped_edge_count,
+  };
 }
 
 interface GraphWorkspaceStateProps {
@@ -72,6 +102,11 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
     queryFn: () => get_graph_edge_detail(selected_edge_id!),
     enabled: Boolean(selected_edge_id),
   });
+  const normalized_graph_state = useMemo<NormalizedGraphState>(
+    () => normalize_graph((graph_query.data ?? EMPTY_GRAPH) as KnowledgeGraphRecord),
+    [graph_query.data],
+  );
+  const graph = normalized_graph_state.graph;
 
   async function refresh_graph(): Promise<void> {
     try {
@@ -161,17 +196,23 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
   }, [edge_detail_query.error, set_error]);
 
   useEffect(() => {
-    const graph = graph_query.data ?? { nodes: [], edges: [] };
+    if (normalized_graph_state.dropped_edge_count <= 0) {
+      return;
+    }
+    console.warn(`知识库图谱已忽略 ${normalized_graph_state.dropped_edge_count} 条缺少端点节点的关系边。`);
+  }, [normalized_graph_state.dropped_edge_count]);
+
+  useEffect(() => {
     if (selected_node_id && !has_node(graph, selected_node_id)) {
       set_selected_node_id(null);
     }
     if (selected_edge_id && !has_edge(graph, selected_edge_id)) {
       set_selected_edge_id(null);
     }
-  }, [graph_query.data, selected_edge_id, selected_node_id]);
+  }, [graph, selected_edge_id, selected_node_id]);
 
   return {
-    graph: (graph_query.data ?? { nodes: [], edges: [] }) as KnowledgeGraphRecord,
+    graph,
     refresh_graph,
     manual_relations: (manual_relations_query.data ?? []) as ManualRelationRecord[],
     refresh_manual_relations,

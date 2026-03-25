@@ -1,4 +1,4 @@
-﻿"""Record store."""
+"""结构化表格行存储"""
 
 from collections import defaultdict
 from typing import Any
@@ -11,7 +11,7 @@ from .common import placeholders, utc_now_iso
 
 
 class RecordStore:
-    """持久化并读取结构化表格行记录。"""
+    """持久化并读取结构化表格行记录"""
 
     def __init__(self, gateway: SQLiteGateway) -> None:
         self.gateway = gateway
@@ -186,7 +186,72 @@ class RecordStore:
             grouped[str(row["record_row_id"])].append(row)
         return grouped
 
+    def list_rows_by_paragraph_ids(self, paragraph_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """按段落 ID 读取对应的结构化行"""
 
+        if not paragraph_ids:
+            return {}
+        rows = self.gateway.fetch_all(
+            f"""
+            SELECT record_rows.*, sources.name AS source_name
+            FROM record_rows
+            JOIN sources ON sources.id = record_rows.source_id
+            WHERE record_rows.paragraph_id IN ({placeholders(paragraph_ids)})
+            """,
+            tuple(paragraph_ids),
+        )
+        return {str(row["paragraph_id"]): row for row in rows}
 
+    def list_rows_in_windows(
+        self,
+        windows: list[tuple[str, str, int]],
+        *,
+        radius: int = 1,
+    ) -> dict[tuple[str, str, int], list[dict[str, Any]]]:
+        """按来源 工作表 与目标行批量读取局部上下文"""
 
+        grouped_windows: dict[tuple[str, str], set[int]] = defaultdict(set)
+        for source_id, worksheet_name, row_index in windows:
+            normalized_source_id = str(source_id or "").strip()
+            worksheet_key = normalize_sheet_name(worksheet_name)
+            normalized_row_index = int(row_index or 0)
+            if not normalized_source_id or not worksheet_key or normalized_row_index <= 0:
+                continue
+            grouped_windows[(normalized_source_id, worksheet_key)].add(normalized_row_index)
+        if not grouped_windows:
+            return {}
 
+        result: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
+        normalized_radius = max(0, int(radius))
+        for (source_id, worksheet_key), row_indexes in grouped_windows.items():
+            min_row = max(0, min(row_indexes) - normalized_radius)
+            max_row = max(row_indexes) + normalized_radius
+            rows = self.gateway.fetch_all(
+                """
+                SELECT record_rows.*
+                FROM record_rows
+                WHERE record_rows.source_id = ?
+                  AND record_rows.worksheet_key = ?
+                  AND record_rows.row_index BETWEEN ? AND ?
+                ORDER BY record_rows.row_index ASC
+                """,
+                (source_id, worksheet_key, min_row, max_row),
+            )
+            cell_map = self.list_cells([str(row["id"]) for row in rows])
+            hydrated_rows = [
+                {
+                    **row,
+                    "cells": {
+                        str(cell["column_name"]): str(cell["cell_value"])
+                        for cell in cell_map.get(str(row["id"]), [])
+                    },
+                }
+                for row in rows
+            ]
+            for target_row_index in row_indexes:
+                result[(source_id, worksheet_key, target_row_index)] = [
+                    row
+                    for row in hydrated_rows
+                    if abs(int(row.get("row_index") or 0) - target_row_index) <= normalized_radius
+                ]
+        return result

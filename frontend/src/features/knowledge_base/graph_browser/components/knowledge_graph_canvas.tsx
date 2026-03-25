@@ -195,6 +195,11 @@ function build_layout(nodes: KnowledgeGraphNodeRecord[], edges: KnowledgeGraphEd
     edges.forEach((edge) => {
       const source_position: LayoutPoint = positions.get(edge.source) ?? { x: 0, y: 0 };
       const target_position: LayoutPoint = positions.get(edge.target) ?? { x: 0, y: 0 };
+      const source_force = forces.get(edge.source);
+      const target_force = forces.get(edge.target);
+      if (!source_force || !target_force) {
+        return;
+      }
       const delta_x: number = target_position.x - source_position.x;
       const delta_y: number = target_position.y - source_position.y;
       const distance: number = Math.max(Math.sqrt(delta_x * delta_x + delta_y * delta_y), 0.001);
@@ -213,10 +218,10 @@ function build_layout(nodes: KnowledgeGraphNodeRecord[], edges: KnowledgeGraphEd
       const attraction_strength: number = (distance - ideal_distance) * 0.03;
       const force_x: number = (delta_x / distance) * attraction_strength;
       const force_y: number = (delta_y / distance) * attraction_strength;
-      forces.get(edge.source)!.x += force_x;
-      forces.get(edge.source)!.y += force_y;
-      forces.get(edge.target)!.x -= force_x;
-      forces.get(edge.target)!.y -= force_y;
+      source_force.x += force_x;
+      source_force.y += force_y;
+      target_force.x -= force_x;
+      target_force.y -= force_y;
     });
 
     nodes.forEach((node) => {
@@ -396,6 +401,7 @@ function build_elements(
   highlighted_node_ids: string[],
   highlighted_edge_ids: string[],
 ): ElementDefinition[] {
+  const visible_node_ids: Set<string> = new Set(nodes.map((node) => node.id));
   const highlighted_node_set: Set<string> = new Set(highlighted_node_ids);
   const highlighted_edge_set: Set<string> = new Set(highlighted_edge_ids);
   const has_highlights: boolean = highlighted_node_set.size > 0 || highlighted_edge_set.size > 0;
@@ -421,23 +427,25 @@ function build_elements(
     };
   });
 
-  const edge_elements: ElementDefinition[] = edges.map((edge) => {
-    const is_selected = edge.id === selected_edge_id;
-    const is_highlighted = highlighted_edge_set.has(edge.id);
+  const edge_elements: ElementDefinition[] = edges
+    .filter((edge) => visible_node_ids.has(edge.source) && visible_node_ids.has(edge.target))
+    .map((edge) => {
+      const is_selected = edge.id === selected_edge_id;
+      const is_highlighted = highlighted_edge_set.has(edge.id);
 
-    return {
-      data: {
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        type: edge.type,
-        color: EDGE_COLOR_MAP[edge.type] ?? '#9ca3af',
-        size: resolve_edge_size(edge, is_selected, is_highlighted),
-        displayLabel: is_selected || is_highlighted || edge.type === 'manual' ? edge.label : '',
-      },
-      classes: edge_class_names(edge, is_selected, is_highlighted, has_highlights),
-    };
-  });
+      return {
+        data: {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: edge.type,
+          color: EDGE_COLOR_MAP[edge.type] ?? '#9ca3af',
+          size: resolve_edge_size(edge, is_selected, is_highlighted),
+          displayLabel: is_selected || is_highlighted || edge.type === 'manual' ? edge.label : '',
+        },
+        classes: edge_class_names(edge, is_selected, is_highlighted, has_highlights),
+      };
+    });
 
   return [...node_elements, ...edge_elements];
 }

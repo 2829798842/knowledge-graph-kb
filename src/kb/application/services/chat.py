@@ -1,4 +1,4 @@
-"""问答模式下的多轮会话服务。"""
+"""问答会话服务"""
 
 from typing import Any
 
@@ -12,7 +12,7 @@ logger = get_logger(__name__)
 
 
 class ConversationService:
-    """管理持久化的问答会话与消息记录。"""
+    """管理持久化问答会话与消息"""
 
     DEFAULT_SESSION_TITLE = "新对话"
 
@@ -28,25 +28,21 @@ class ConversationService:
         self.answer_service = answer_service
 
     def list_sessions(self, *, limit: int = 50) -> list[dict[str, Any]]:
-        """按最近更新时间返回问答会话列表。"""
-
         return self.store.list_sessions(limit=limit)
 
     def create_session(self, *, title: str | None = None, metadata: dict[str, Any] | None = None) -> dict[str, Any]:
-        """创建一个新的问答会话。"""
-
         normalized_title = str(title or "").strip() or self.DEFAULT_SESSION_TITLE
         session = self.store.create_session(title=normalized_title, metadata=metadata)
-        logger.info("已创建问答会话：session_id=%s title=%s", str(session.get("id") or ""), normalized_title)
+        logger.info("Created chat session: session_id=%s title=%s", str(session.get("id") or ""), normalized_title)
         return session
 
     def get_session(self, session_id: str) -> dict[str, Any] | None:
-        """读取会话详情并补全消息列表。"""
-
         session = self.store.get_session(session_id)
         if session is None:
+            logger.debug("聊天会话不存在：session_id=%s", session_id)
             return None
-        return self.store.hydrate_session(session)
+        logger.debug("开始回读聊天会话：session_id=%s", session_id)
+        return self._hydrate_session_with_rendering(session)
 
     def post_user_message(
         self,
@@ -57,21 +53,19 @@ class ConversationService:
         worksheet_names: list[str] | None = None,
         top_k: int | None = None,
     ) -> dict[str, Any]:
-        """写入用户消息、执行问答，并返回更新后的完整会话。"""
-
         session = self.store.get_session(session_id)
         if session is None:
-            raise ValueError("未找到问答会话。")
+            raise ValueError("Chat session not found.")
 
         normalized_content = str(content or "").strip()
         if not normalized_content:
-            raise ValueError("消息内容不能为空。")
+            raise ValueError("Message content cannot be empty.")
 
         existing_messages = self.store.list_messages(session_id)
         user_turn_count = sum(1 for message in existing_messages if str(message.get("role") or "") == "user")
         turn_index = user_turn_count + 1
         logger.info(
-            "开始处理问答消息：session_id=%s turn_index=%s query_length=%s source_count=%s worksheet_count=%s top_k=%s",
+            "Processing chat message: session_id=%s turn_index=%s query_length=%s source_count=%s worksheet_count=%s top_k=%s",
             session_id,
             turn_index,
             len(normalized_content),
@@ -87,6 +81,13 @@ class ConversationService:
         )
 
         recent_history = self._history_context(existing_messages)
+        logger.debug(
+            "聊天上下文已准备：session_id=%s turn_index=%s history_message_count=%s history_turn_count=%s",
+            session_id,
+            turn_index,
+            len(existing_messages),
+            len(recent_history),
+        )
         answer_payload = self.answer_service.answer(
             query=normalized_content,
             source_ids=source_ids,
@@ -127,10 +128,10 @@ class ConversationService:
             )
         refreshed_session = self.store.get_session(session_id)
         if refreshed_session is None:
-            raise ValueError("消息已写入，但重新读取问答会话失败。")
-        hydrated_session = self.store.hydrate_session(refreshed_session)
+            raise ValueError("Chat session could not be reloaded after message persistence.")
+        hydrated_session = self._hydrate_session_with_rendering(refreshed_session)
         logger.info(
-            "问答消息处理完成：session_id=%s turn_index=%s answer_status=%s retrieval_mode=%s citation_count=%s",
+            "Chat message processed: session_id=%s turn_index=%s answer_status=%s retrieval_mode=%s citation_count=%s",
             session_id,
             turn_index,
             str(answer_payload.get("execution", {}).get("status") or "unknown"),
@@ -139,9 +140,30 @@ class ConversationService:
         )
         return hydrated_session
 
-    def _history_context(self, messages: list[dict[str, Any]]) -> list[dict[str, str]]:
-        """截取参与当前轮问答的最近历史上下文。"""
+    def _hydrate_session_with_rendering(self, session: dict[str, Any]) -> dict[str, Any]:
+        hydrated_session = self.store.hydrate_session(session)
+        hydrated_messages: list[dict[str, Any]] = []
+        assistant_count = 0
+        citation_count = 0
+        for message in list(hydrated_session.get("messages") or []):
+            normalized_message = dict(message)
+            if str(normalized_message.get("role") or "") == "assistant":
+                assistant_count += 1
+                citation_count += len(list(normalized_message.get("citations") or []))
+                normalized_message["citations"] = self.answer_service.hydrate_citations(
+                    list(normalized_message.get("citations") or [])
+                )
+            hydrated_messages.append(normalized_message)
+        logger.debug(
+            "聊天会话渲染补全完成：session_id=%s message_count=%s assistant_count=%s citation_count=%s",
+            str(hydrated_session.get("id") or ""),
+            len(hydrated_messages),
+            assistant_count,
+            citation_count,
+        )
+        return {**hydrated_session, "messages": hydrated_messages}
 
+    def _history_context(self, messages: list[dict[str, Any]]) -> list[dict[str, str]]:
         if not messages:
             return []
         history_window = max(0, self.settings.query_history_turns) * 2
@@ -158,8 +180,6 @@ class ConversationService:
         ]
 
     def _title_from_content(self, content: str) -> str:
-        """从首条用户消息中生成默认会话标题。"""
-
         compact = " ".join(content.split())
         if len(compact) <= 24:
             return compact

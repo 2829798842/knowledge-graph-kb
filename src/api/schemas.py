@@ -1,6 +1,6 @@
 ﻿"""閲嶆瀯鍚?HTTP API 浣跨敤鐨?Pydantic 妯″瀷銆"""
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -58,6 +58,9 @@ class ParagraphItem(BaseModel):
     token_count: int
     vector_state: str
     metadata: dict[str, Any] = Field(default_factory=dict)
+    render_kind: Literal["text", "row_record", "sheet_summary"] = "text"
+    rendered_html: str | None = None
+    render_metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: str
     updated_at: str
 
@@ -154,6 +157,9 @@ class CitationItem(BaseModel):
     source_name: str
     excerpt: str
     score: float
+    render_kind: Literal["text", "row_record", "sheet_summary"] = "text"
+    rendered_html: str | None = None
+    render_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class AnswerExecutionItem(BaseModel):

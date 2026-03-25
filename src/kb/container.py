@@ -99,6 +99,7 @@ def build_knowledge_base_container(settings: Settings) -> KnowledgeBaseContainer
     answer_service = AnswerService(
         settings=settings,
         answer_read_store=answer_read_store,
+        record_store=record_store,
         hybrid_answer_retriever=hybrid_answer_retriever,
         openai_gateway=openai_gateway,
     )
