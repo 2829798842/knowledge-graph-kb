@@ -1,5 +1,5 @@
 /**
- * Source browser panel.
+ * 来源浏览面板。
  */
 
 import { useDeferredValue, useEffect, useState } from 'react';

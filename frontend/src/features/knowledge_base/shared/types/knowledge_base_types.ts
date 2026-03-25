@@ -121,11 +121,58 @@ export interface AnswerCitationRecord {
   score: number;
 }
 
-export interface AnswerQueryResult {
-  answer: string;
+export interface AnswerExecutionRecord {
+  status: string;
+  retrieval_mode: string;
+  model_invoked: boolean;
+  matched_paragraph_count: number;
+  message: string;
+}
+
+export interface RetrievalTraceLaneRecord {
+  executed: boolean;
+  skipped_reason: string | null;
+  hit_count: number;
+  latency_ms: number;
+  top_paragraph_ids: string[];
+}
+
+export interface RetrievalTraceRecord {
+  structured: RetrievalTraceLaneRecord;
+  vector: RetrievalTraceLaneRecord;
+  fusion: RetrievalTraceLaneRecord;
+  ppr: RetrievalTraceLaneRecord;
+  total_ms: number;
+}
+
+export interface ChatSessionRecord {
+  id: string;
+  title: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  last_message_at: string | null;
+}
+
+export interface ChatMessageRecord {
+  id: string;
+  session_id: string;
+  role: string;
+  content: string;
+  turn_index: number;
   citations: AnswerCitationRecord[];
+  execution: AnswerExecutionRecord | null;
+  retrieval_trace: RetrievalTraceRecord | null;
   highlighted_node_ids: string[];
   highlighted_edge_ids: string[];
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatSessionDetailRecord {
+  session: ChatSessionRecord;
+  messages: ChatMessageRecord[];
 }
 
 export interface RecordSearchItemRecord {

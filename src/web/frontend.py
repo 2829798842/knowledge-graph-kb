@@ -1,4 +1,4 @@
-"""集成式 FastAPI 应用的前端托管辅助工具。"""
+"""注册前端静态资源路由，并在缺少构建产物时返回中文提示页。"""
 
 from pathlib import Path
 
@@ -9,7 +9,7 @@ FRONTEND_INDEX_FILE_NAME: str = "index.html"
 
 
 def register_frontend_routes(app: FastAPI, frontend_dist_dir: Path) -> None:
-    """注册前端静态资源路由与单页应用回退路由。"""
+    """为单页前端应用注册入口路由与静态资源回退逻辑。"""
 
     resolved_frontend_dist_dir: Path = frontend_dist_dir.resolve()
     index_file: Path = resolved_frontend_dist_dir / FRONTEND_INDEX_FILE_NAME
@@ -19,27 +19,13 @@ def register_frontend_routes(app: FastAPI, frontend_dist_dir: Path) -> None:
 
     @app.get("/", include_in_schema=False)
     def serve_frontend_index() -> FileResponse:
-        """返回前端入口页面。
-
-        Returns:
-            FileResponse: 前端入口文件响应。
-        """
+        """返回前端入口页面。"""
 
         return FileResponse(index_file)
 
     @app.get("/{requested_path:path}", include_in_schema=False)
     def serve_frontend_route(requested_path: str) -> FileResponse:
-        """返回前端静态资源或单页应用入口。
-
-        Args:
-            requested_path: 请求的前端资源路径。
-
-        Returns:
-            FileResponse: 对应的静态资源或入口文件响应。
-
-        Raises:
-            HTTPException: 当请求路径指向 API 前缀时抛出。
-        """
+        """优先返回静态资源，找不到时回退到单页应用入口。"""
 
         if requested_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
@@ -54,33 +40,19 @@ def register_frontend_routes(app: FastAPI, frontend_dist_dir: Path) -> None:
 
 
 def _register_missing_frontend_routes(app: FastAPI, frontend_dist_dir: Path) -> None:
-    """当前端构建产物不存在时，注册提示页面。"""
+    """当前端构建产物缺失时，注册中文引导页面。"""
 
     guidance_html: str = _build_missing_frontend_html(frontend_dist_dir)
 
     @app.get("/", include_in_schema=False)
     def serve_missing_frontend() -> HTMLResponse:
-        """返回前端构建产物缺失提示页。
-
-        Returns:
-            HTMLResponse: 缺失前端资源时的提示页面响应。
-        """
+        """返回前端缺失提示页。"""
 
         return HTMLResponse(content=guidance_html, status_code=503)
 
     @app.get("/{requested_path:path}", include_in_schema=False)
     def serve_missing_frontend_fallback(requested_path: str) -> HTMLResponse:
-        """返回前端缺失时的回退提示页。
-
-        Args:
-            requested_path: 请求的前端资源路径。
-
-        Returns:
-            HTMLResponse: 缺失前端资源时的提示页面响应。
-
-        Raises:
-            HTTPException: 当请求路径指向 API 前缀时抛出。
-        """
+        """在任意非 API 路径下返回前端缺失提示页。"""
 
         if requested_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Not Found")
@@ -88,7 +60,7 @@ def _register_missing_frontend_routes(app: FastAPI, frontend_dist_dir: Path) -> 
 
 
 def _build_missing_frontend_html(frontend_dist_dir: Path) -> str:
-    """构建前端产物缺失时显示的提示页面 HTML。"""
+    """构建缺失前端产物时展示的中文 HTML 提示。"""
 
     return f"""
 <!doctype html>
@@ -100,11 +72,11 @@ def _build_missing_frontend_html(frontend_dist_dir: Path) -> str:
   <body>
     <main style="font-family: sans-serif; max-width: 720px; margin: 48px auto; line-height: 1.6;">
       <h1>前端静态资源尚未构建</h1>
-      <p>当前后端已经按一体化方式启动，但在返回页面前，需要先准备好前端构建产物。</p>
+      <p>后端已经启动，但在展示页面之前，还需要先生成前端构建产物。</p>
       <p>请在项目根目录执行：</p>
       <pre style="background: #f5f5f5; padding: 16px; border-radius: 8px;">cd frontend
 pnpm build</pre>
-      <p>当前期望的前端目录为：<code>{frontend_dist_dir.as_posix()}</code></p>
+      <p>当前期望的前端构建目录为：<code>{frontend_dist_dir.as_posix()}</code></p>
     </main>
   </body>
 </html>
@@ -112,7 +84,7 @@ pnpm build</pre>
 
 
 def _resolve_frontend_file(frontend_dist_dir: Path, requested_path: str) -> Path | None:
-    """解析前端构建目录中的静态资源路径。"""
+    """解析并校验前端静态资源路径，防止越权访问。"""
 
     if not requested_path or requested_path.endswith("/"):
         return None

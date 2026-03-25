@@ -1,5 +1,5 @@
 /**
- * Import-center workspace slice.
+ * 导入中心状态切片。
  */
 
 import { use_knowledge_base_workspace_context } from '../../shared/context/knowledge_base_workspace_context';

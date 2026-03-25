@@ -1,0 +1,410 @@
+﻿"""Import-job store."""
+
+from typing import Any
+from uuid import uuid4
+
+from ..database.sqlite import SQLiteGateway
+from .common import resolve_progress, utc_now_iso
+
+
+class ImportJobStore:
+    """持久化导入任务、文件和分块记录。"""
+
+    def __init__(self, gateway: SQLiteGateway) -> None:
+        self.gateway = gateway
+
+    def create_job(
+        self,
+        *,
+        source: str,
+        input_mode: str,
+        strategy: str,
+        params: dict[str, Any],
+        total_files: int,
+    ) -> dict[str, Any]:
+        job_id = str(uuid4())
+        now = utc_now_iso()
+        payload = {
+            "id": job_id,
+            "source": source,
+            "input_mode": input_mode,
+            "strategy": strategy,
+            "status": "queued",
+            "current_step": "queued",
+            "progress": 0.0,
+            "total_files": total_files,
+            "completed_files": 0,
+            "failed_files": 0,
+            "total_chunks": 0,
+            "completed_chunks": 0,
+            "failed_chunks": 0,
+            "message": "Queued import job",
+            "error": None,
+            "params": params,
+            "created_at": now,
+            "started_at": None,
+            "finished_at": None,
+            "updated_at": now,
+        }
+        with self.gateway.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO import_jobs (
+                    id, source, input_mode, strategy, status, current_step, progress,
+                    total_files, completed_files, failed_files, total_chunks, completed_chunks,
+                    failed_chunks, message, error, params, created_at, started_at, finished_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["id"],
+                    payload["source"],
+                    payload["input_mode"],
+                    payload["strategy"],
+                    payload["status"],
+                    payload["current_step"],
+                    payload["progress"],
+                    payload["total_files"],
+                    payload["completed_files"],
+                    payload["failed_files"],
+                    payload["total_chunks"],
+                    payload["completed_chunks"],
+                    payload["failed_chunks"],
+                    payload["message"],
+                    payload["error"],
+                    self.gateway.dump_json(payload["params"]),
+                    payload["created_at"],
+                    payload["started_at"],
+                    payload["finished_at"],
+                    payload["updated_at"],
+                ),
+            )
+            connection.commit()
+        return payload
+
+    def create_job_file(
+        self,
+        *,
+        job_id: str,
+        name: str,
+        source_kind: str,
+        input_mode: str,
+        strategy: str,
+        storage_path: str | None,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        file_id = str(uuid4())
+        now = utc_now_iso()
+        payload = {
+            "id": file_id,
+            "job_id": job_id,
+            "source_id": None,
+            "name": name,
+            "source_kind": source_kind,
+            "input_mode": input_mode,
+            "strategy": strategy,
+            "status": "queued",
+            "current_step": "queued",
+            "progress": 0.0,
+            "total_chunks": 0,
+            "completed_chunks": 0,
+            "failed_chunks": 0,
+            "storage_path": storage_path,
+            "metadata": metadata,
+            "error": None,
+            "created_at": now,
+            "updated_at": now,
+        }
+        with self.gateway.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO import_job_files (
+                    id, job_id, source_id, name, source_kind, input_mode, strategy, status,
+                    current_step, progress, total_chunks, completed_chunks, failed_chunks,
+                    storage_path, metadata, error, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["id"],
+                    payload["job_id"],
+                    payload["source_id"],
+                    payload["name"],
+                    payload["source_kind"],
+                    payload["input_mode"],
+                    payload["strategy"],
+                    payload["status"],
+                    payload["current_step"],
+                    payload["progress"],
+                    payload["total_chunks"],
+                    payload["completed_chunks"],
+                    payload["failed_chunks"],
+                    payload["storage_path"],
+                    self.gateway.dump_json(payload["metadata"]),
+                    payload["error"],
+                    payload["created_at"],
+                    payload["updated_at"],
+                ),
+            )
+            connection.commit()
+        self.refresh_job_counters(job_id)
+        return payload
+
+    def create_job_chunks(
+        self,
+        *,
+        job_id: str,
+        file_id: str,
+        chunk_previews: list[str],
+    ) -> list[dict[str, Any]]:
+        now = utc_now_iso()
+        rows: list[dict[str, Any]] = []
+        with self.gateway.transaction() as connection:
+            for chunk_index, preview in enumerate(chunk_previews):
+                payload = {
+                    "id": str(uuid4()),
+                    "job_id": job_id,
+                    "file_id": file_id,
+                    "paragraph_id": None,
+                    "chunk_index": chunk_index,
+                    "chunk_type": "paragraph",
+                    "status": "queued",
+                    "step": "queued",
+                    "progress": 0.0,
+                    "content_preview": preview[:240] or None,
+                    "metadata": {},
+                    "error": None,
+                    "created_at": now,
+                    "updated_at": now,
+                }
+                connection.execute(
+                    """
+                    INSERT INTO import_job_chunks (
+                        id, job_id, file_id, paragraph_id, chunk_index, chunk_type, status,
+                        step, progress, content_preview, metadata, error, created_at, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        payload["id"],
+                        payload["job_id"],
+                        payload["file_id"],
+                        payload["paragraph_id"],
+                        payload["chunk_index"],
+                        payload["chunk_type"],
+                        payload["status"],
+                        payload["step"],
+                        payload["progress"],
+                        payload["content_preview"],
+                        self.gateway.dump_json(payload["metadata"]),
+                        payload["error"],
+                        payload["created_at"],
+                        payload["updated_at"],
+                    ),
+                )
+                rows.append(payload)
+            connection.commit()
+        self.refresh_file_counters(file_id)
+        return rows
+
+    def list_jobs(self, *, limit: int = 50) -> list[dict[str, Any]]:
+        return self.gateway.fetch_all(
+            "SELECT * FROM import_jobs ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+
+    def get_job(self, job_id: str) -> dict[str, Any] | None:
+        return self.gateway.fetch_one("SELECT * FROM import_jobs WHERE id = ?", (job_id,))
+
+    def list_job_files(self, job_id: str) -> list[dict[str, Any]]:
+        return self.gateway.fetch_all(
+            "SELECT * FROM import_job_files WHERE job_id = ? ORDER BY created_at ASC",
+            (job_id,),
+        )
+
+    def get_job_file(self, file_id: str) -> dict[str, Any] | None:
+        return self.gateway.fetch_one("SELECT * FROM import_job_files WHERE id = ?", (file_id,))
+
+    def list_job_chunks(self, job_id: str, file_id: str) -> list[dict[str, Any]]:
+        return self.gateway.fetch_all(
+            """
+            SELECT *
+            FROM import_job_chunks
+            WHERE job_id = ? AND file_id = ?
+            ORDER BY chunk_index ASC
+            """,
+            (job_id, file_id),
+        )
+
+    def update_job(self, job_id: str, **fields: Any) -> dict[str, Any] | None:
+        return self._update_row("import_jobs", job_id, fields)
+
+    def update_job_file(self, file_id: str, **fields: Any) -> dict[str, Any] | None:
+        row = self._update_row("import_job_files", file_id, fields)
+        if row is not None:
+            self.refresh_job_counters(str(row["job_id"]))
+        return row
+
+    def update_job_chunk(self, chunk_id: str, **fields: Any) -> dict[str, Any] | None:
+        row = self._update_row("import_job_chunks", chunk_id, fields)
+        if row is not None:
+            self.refresh_file_counters(str(row["file_id"]))
+        return row
+
+    def refresh_file_counters(self, file_id: str) -> dict[str, Any] | None:
+        file_row = self.get_job_file(file_id)
+        if file_row is None:
+            return None
+        with self.gateway.transaction() as connection:
+            counters = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_chunks,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_chunks,
+                    SUM(CASE WHEN status IN ('failed', 'cancelled', 'aborted') THEN 1 ELSE 0 END) AS failed_chunks
+                FROM import_job_chunks
+                WHERE file_id = ?
+                """,
+                (file_id,),
+            ).fetchone()
+            total_chunks = int(counters["total_chunks"] or 0)
+            completed_chunks = int(counters["completed_chunks"] or 0)
+            failed_chunks = int(counters["failed_chunks"] or 0)
+            progress = resolve_progress(completed_chunks + failed_chunks, total_chunks)
+            connection.execute(
+                """
+                UPDATE import_job_files
+                SET total_chunks = ?, completed_chunks = ?, failed_chunks = ?, progress = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (total_chunks, completed_chunks, failed_chunks, progress, utc_now_iso(), file_id),
+            )
+            connection.commit()
+        self.refresh_job_counters(str(file_row["job_id"]))
+        return self.get_job_file(file_id)
+
+    def refresh_job_counters(self, job_id: str) -> dict[str, Any] | None:
+        job_row = self.get_job(job_id)
+        if job_row is None:
+            return None
+        with self.gateway.transaction() as connection:
+            file_counters = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_files,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_files,
+                    SUM(CASE WHEN status IN ('failed', 'cancelled', 'aborted', 'partial') THEN 1 ELSE 0 END) AS failed_files
+                FROM import_job_files
+                WHERE job_id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+            chunk_counters = connection.execute(
+                """
+                SELECT
+                    COUNT(*) AS total_chunks,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_chunks,
+                    SUM(CASE WHEN status IN ('failed', 'cancelled', 'aborted') THEN 1 ELSE 0 END) AS failed_chunks
+                FROM import_job_chunks
+                WHERE job_id = ?
+                """,
+                (job_id,),
+            ).fetchone()
+            total_files = int(file_counters["total_files"] or 0)
+            completed_files = int(file_counters["completed_files"] or 0)
+            failed_files = int(file_counters["failed_files"] or 0)
+            total_chunks = int(chunk_counters["total_chunks"] or 0)
+            completed_chunks = int(chunk_counters["completed_chunks"] or 0)
+            failed_chunks = int(chunk_counters["failed_chunks"] or 0)
+            progress = resolve_progress(
+                completed_chunks + failed_chunks if total_chunks else completed_files + failed_files,
+                total_chunks if total_chunks else total_files,
+            )
+            connection.execute(
+                """
+                UPDATE import_jobs
+                SET total_files = ?, completed_files = ?, failed_files = ?,
+                    total_chunks = ?, completed_chunks = ?, failed_chunks = ?,
+                    progress = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    total_files,
+                    completed_files,
+                    failed_files,
+                    total_chunks,
+                    completed_chunks,
+                    failed_chunks,
+                    progress,
+                    utc_now_iso(),
+                    job_id,
+                ),
+            )
+            connection.commit()
+        return self.get_job(job_id)
+
+    def mark_incomplete_jobs_aborted(self) -> None:
+        now = utc_now_iso()
+        with self.gateway.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE import_jobs
+                SET status = 'aborted',
+                    current_step = 'aborted',
+                    message = 'Application restarted before job completion.',
+                    finished_at = COALESCE(finished_at, ?),
+                    updated_at = ?
+                WHERE status IN ('queued', 'running')
+                """,
+                (now, now),
+            )
+            connection.execute(
+                """
+                UPDATE import_job_files
+                SET status = 'aborted',
+                    current_step = 'aborted',
+                    updated_at = ?
+                WHERE status IN ('queued', 'running')
+                """,
+                (now,),
+            )
+            connection.execute(
+                """
+                UPDATE import_job_chunks
+                SET status = 'aborted',
+                    step = 'aborted',
+                    updated_at = ?
+                WHERE status IN ('queued', 'running')
+                """,
+                (now,),
+            )
+            connection.commit()
+
+    def hydrate_job(self, job: dict[str, Any]) -> dict[str, Any]:
+        files = self.list_job_files(str(job["id"]))
+        hydrated_files = [{**file_row, "chunks": self.list_job_chunks(str(job["id"]), str(file_row["id"]))} for file_row in files]
+        return {**job, "files": hydrated_files}
+
+    def _update_row(self, table_name: str, row_id: str, fields: dict[str, Any]) -> dict[str, Any] | None:
+        if not fields:
+            return self.gateway.fetch_one(f"SELECT * FROM {table_name} WHERE id = ?", (row_id,))
+        encoded_fields: dict[str, Any] = {}
+        for field_name, value in fields.items():
+            if field_name in {"metadata", "params"} and isinstance(value, dict):
+                encoded_fields[field_name] = self.gateway.dump_json(value)
+            else:
+                encoded_fields[field_name] = value
+        encoded_fields["updated_at"] = utc_now_iso()
+        assignments = ", ".join(f"{field_name} = ?" for field_name in encoded_fields)
+        params = tuple(encoded_fields.values()) + (row_id,)
+        with self.gateway.transaction() as connection:
+            connection.execute(
+                f"UPDATE {table_name} SET {assignments} WHERE id = ?",
+                params,
+            )
+            connection.commit()
+        return self.gateway.fetch_one(f"SELECT * FROM {table_name} WHERE id = ?", (row_id,))
+
+
+
+

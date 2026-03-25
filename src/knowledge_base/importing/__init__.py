@@ -1,17 +1,19 @@
-"""Import helpers used by the knowledge base runtime."""
+"""Legacy compatibility exports for importing modules."""
 
-from .excel import EXCEL_FILE_TYPES, build_excel_import_bundle, load_excel_document, supports_excel_file_type
-from .payload_normalizers import build_structured_import_item, build_text_import_item
-from .strategy_router import normalize_strategy, select_strategy, split_text_by_strategy
+from src.kb.importing.parser import (
+    SUPPORTED_EXTENSIONS,
+    SUPPORTED_EXTENSION_DISPLAY,
+    SUPPORTED_EXTENSION_SET,
+    UnsupportedFileTypeError,
+    detect_file_type,
+    extract_text,
+)
 
 __all__ = [
-    "EXCEL_FILE_TYPES",
-    "build_excel_import_bundle",
-    "build_structured_import_item",
-    "build_text_import_item",
-    "load_excel_document",
-    "normalize_strategy",
-    "select_strategy",
-    "split_text_by_strategy",
-    "supports_excel_file_type",
+    "SUPPORTED_EXTENSIONS",
+    "SUPPORTED_EXTENSION_DISPLAY",
+    "SUPPORTED_EXTENSION_SET",
+    "UnsupportedFileTypeError",
+    "detect_file_type",
+    "extract_text",
 ]

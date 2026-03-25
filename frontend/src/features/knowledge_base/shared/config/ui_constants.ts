@@ -1,5 +1,5 @@
 /**
- * Shared UI constants for the knowledge-base workspace.
+ * 知识库工作区共享 UI 常量。
  */
 
 import type { ThemeMode } from '../../../../theme';

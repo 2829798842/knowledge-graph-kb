@@ -1,5 +1,5 @@
 /**
- * Import center panel.
+ * 导入中心面板。
  */
 
 import { useState } from 'react';
@@ -25,6 +25,22 @@ function resolve_task_mode_label(task: ImportTaskRecord): string {
   const file_source_kind: string = task.files[0]?.source_kind ?? '';
   const mode_key: string = file_source_kind || task_source || task.input_mode;
   return get_input_mode_label(mode_key || task.input_mode);
+}
+
+function count_partial_files(task: ImportTaskRecord): number {
+  return task.files.filter((file) => file.status === 'partial').length;
+}
+
+function count_failed_files(task: ImportTaskRecord): number {
+  return task.files.filter((file) => ['failed', 'cancelled', 'aborted'].includes(file.status)).length;
+}
+
+function count_problem_files(task: ImportTaskRecord): number {
+  return task.files.filter((file) => ['partial', 'failed', 'cancelled', 'aborted'].includes(file.status)).length;
+}
+
+function count_processed_files(task: ImportTaskRecord): number {
+  return task.files.filter((file) => ['completed', 'partial'].includes(file.status)).length;
 }
 
 export function ImportCenterPanel() {
@@ -57,7 +73,8 @@ export function ImportCenterPanel() {
     return left_rank - right_rank;
   });
   const active_task_count: number = tasks.filter((task) => ['queued', 'running'].includes(task.status)).length;
-  const failed_task_count: number = tasks.filter((task) => task.status === 'failed' || task.failed_files > 0).length;
+  const partial_task_count: number = tasks.filter((task) => count_partial_files(task) > 0 || task.status === 'partial').length;
+  const failed_task_count: number = tasks.filter((task) => count_failed_files(task) > 0 || task.status === 'failed').length;
   const current_mode = IMPORT_MODES.find((mode) => mode.id === import_mode) ?? IMPORT_MODES[0];
 
   return (
@@ -95,6 +112,7 @@ export function ImportCenterPanel() {
             <p>{current_mode.description}</p>
             <div className='kb-meta-strip'>
               <span className='kb-meta-pill'>{`进行中 ${active_task_count}`}</span>
+              <span className='kb-meta-pill'>{`部分完成 ${partial_task_count}`}</span>
               <span className='kb-meta-pill'>{`失败 ${failed_task_count}`}</span>
               <span className='kb-meta-pill'>{`总任务 ${tasks.length}`}</span>
             </div>
@@ -255,60 +273,68 @@ export function ImportCenterPanel() {
           </div>
 
           <div className='kb-task-list'>
-            {ordered_tasks.map((task) => (
-              <article className='kb-task-card' key={task.id}>
-                <div className='kb-task-header'>
-                  <div>
-                    <strong>{`${resolve_task_mode_label(task)}任务`}</strong>
-                    <span>{`当前阶段：${get_step_label(task.current_step)}`}</span>
-                  </div>
-                  <span className='kb-task-status'>{get_status_label(task.status)}</span>
-                </div>
+            {ordered_tasks.map((task) => {
+              const processed_file_count: number = count_processed_files(task);
+              const problem_file_count: number = count_problem_files(task);
 
-                <div className='kb-progress-track'>
-                  <div className='kb-progress-fill' style={{ width: `${task.progress}%` }} />
-                </div>
-
-                <div className='kb-task-meta'>
-                  <span>{`文件 ${task.completed_files}/${task.total_files}`}</span>
-                  <span>{`分块 ${task.completed_chunks}/${task.total_chunks}`}</span>
-                  <span>{`策略 ${get_strategy_label(task.strategy)}`}</span>
-                </div>
-
-                {task.error ? <span className='kb-helper-text'>{`错误：${task.error}`}</span> : null}
-
-                <div className='kb-task-actions'>
-                  {['running', 'queued'].includes(task.status) ? (
-                    <button className='kb-secondary-button' onClick={() => void cancel_task(task.id)} type='button'>
-                      取消任务
-                    </button>
-                  ) : null}
-                  {task.failed_files > 0 ? (
-                    <button className='kb-secondary-button' onClick={() => void retry_task(task.id)} type='button'>
-                      重试失败文件
-                    </button>
-                  ) : null}
-                </div>
-
-                <div className='kb-task-files'>
-                  {task.files.slice(0, 3).map((file) => (
-                    <div className='kb-task-file' key={file.id}>
-                      <div className='kb-task-file-header'>
-                        <strong>{file.name}</strong>
-                        <span>{`阶段：${get_step_label(file.current_step)}`}</span>
-                      </div>
-                      <div className='kb-progress-track is-compact'>
-                        <div className='kb-progress-fill' style={{ width: `${file.progress}%` }} />
-                      </div>
-                      <span>{`分块 ${file.completed_chunks}/${file.total_chunks}，失败 ${file.failed_chunks}`}</span>
+              return (
+                <article className='kb-task-card' key={task.id}>
+                  <div className='kb-task-header'>
+                    <div>
+                      <strong>{`${resolve_task_mode_label(task)}任务`}</strong>
+                      <span>{`当前阶段：${get_step_label(task.current_step)}`}</span>
                     </div>
-                  ))}
-                  {task.files.length > 3 ? (
-                    <span className='kb-helper-text'>{`还有 ${task.files.length - 3} 个文件`}</span>
-                  ) : null}
-                </div>
-              </article>
-            ))}
+                    <span className='kb-task-status'>{get_status_label(task.status)}</span>
+                  </div>
+
+                  <div className='kb-progress-track'>
+                    <div className='kb-progress-fill' style={{ width: `${task.progress}%` }} />
+                  </div>
+
+                  <div className='kb-task-meta'>
+                    <span>{`已处理 ${processed_file_count}/${task.total_files}`}</span>
+                    <span>{`分块 ${task.completed_chunks}/${task.total_chunks}`}</span>
+                    <span>{`异常文件 ${problem_file_count}`}</span>
+                    <span>{`策略 ${get_strategy_label(task.strategy)}`}</span>
+                  </div>
+
+                  {task.error ? <span className='kb-helper-text'>{`说明：${task.error}`}</span> : null}
+
+                  <div className='kb-task-actions'>
+                    {['running', 'queued'].includes(task.status) ? (
+                      <button className='kb-secondary-button' onClick={() => void cancel_task(task.id)} type='button'>
+                        取消任务
+                      </button>
+                    ) : null}
+                    {problem_file_count > 0 ? (
+                      <button className='kb-secondary-button' onClick={() => void retry_task(task.id)} type='button'>
+                        重试异常文件
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className='kb-task-files'>
+                    {task.files.slice(0, 3).map((file) => (
+                      <div className='kb-task-file' key={file.id}>
+                        <div className='kb-task-file-header'>
+                          <strong>{file.name}</strong>
+                          <span>{get_status_label(file.status)}</span>
+                        </div>
+                        <span>{`阶段：${get_step_label(file.current_step)}`}</span>
+                        <div className='kb-progress-track is-compact'>
+                          <div className='kb-progress-fill' style={{ width: `${file.progress}%` }} />
+                        </div>
+                        <span>{`分块 ${file.completed_chunks}/${file.total_chunks}，失败 ${file.failed_chunks}`}</span>
+                        {file.error ? <span className='kb-helper-text'>{`说明：${file.error}`}</span> : null}
+                      </div>
+                    ))}
+                    {task.files.length > 3 ? (
+                      <span className='kb-helper-text'>{`还有 ${task.files.length - 3} 个文件`}</span>
+                    ) : null}
+                  </div>
+                </article>
+              );
+            })}
 
             {!ordered_tasks.length ? <div className='kb-empty-card'>暂时还没有导入任务。</div> : null}
           </div>

@@ -5,7 +5,7 @@ import uvicorn
 
 from src import create_app
 from src.config import Settings, get_settings
-from src.utils.logging_utils import configure_logging, get_logger
+from src.utils.logger import configure_logging, get_logger
 
 settings: Settings = get_settings()
 configure_logging(settings.log_level)

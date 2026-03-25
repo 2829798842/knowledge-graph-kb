@@ -1,4 +1,4 @@
-"""应用配置与路径辅助函数。"""
+﻿"""应用配置与路径辅助函数。"""
 
 from functools import lru_cache
 from pathlib import Path
@@ -10,7 +10,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
-    """从环境变量加载的运行时应用配置。"""
+    """从环境变量加载的运行时配置。"""
 
     app_name: str = "Knowledge Graph KB"
     kb_data_dir: str = Field(
@@ -75,10 +75,15 @@ class Settings(BaseSettings):
     chunk_size_tokens: int = Field(default=600, validation_alias=AliasChoices("CHUNK_SIZE_TOKENS"))
     chunk_overlap_tokens: int = Field(default=120, validation_alias=AliasChoices("CHUNK_OVERLAP_TOKENS"))
     query_context_chunks: int = Field(default=6, validation_alias=AliasChoices("QUERY_CONTEXT_CHUNKS"))
-    graph_similarity_threshold: float = Field(
-        default=0.78,
-        validation_alias=AliasChoices("GRAPH_SIMILARITY_THRESHOLD"),
+    query_rrf_k: int = Field(default=60, validation_alias=AliasChoices("QUERY_RRF_K"))
+    query_structured_short_circuit_hits: int = Field(
+        default=3,
+        validation_alias=AliasChoices("QUERY_STRUCTURED_SHORT_CIRCUIT_HITS"),
     )
+    query_ppr_enabled: bool = Field(default=False, validation_alias=AliasChoices("QUERY_PPR_ENABLED"))
+    query_ppr_min_hits: int = Field(default=5, validation_alias=AliasChoices("QUERY_PPR_MIN_HITS"))
+    query_ppr_candidate_limit: int = Field(default=30, validation_alias=AliasChoices("QUERY_PPR_CANDIDATE_LIMIT"))
+    query_history_turns: int = Field(default=3, validation_alias=AliasChoices("QUERY_HISTORY_TURNS"))
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
 
     model_config = SettingsConfigDict(
@@ -131,10 +136,11 @@ def get_settings() -> Settings:
 
 
 def ensure_app_dirs(settings: Settings | None = None) -> None:
-    """创建应用运行所需的目录。"""
+    """创建应用运行所需目录。"""
 
     active_settings = settings or get_settings()
     active_settings.resolved_kb_data_dir.mkdir(parents=True, exist_ok=True)
     active_settings.resolved_kb_vector_dir.mkdir(parents=True, exist_ok=True)
     active_settings.resolved_kb_upload_dir.mkdir(parents=True, exist_ok=True)
     active_settings.resolved_model_config_secret_path.parent.mkdir(parents=True, exist_ok=True)
+

@@ -1,5 +1,5 @@
 /**
- * Knowledge-base workspace shell.
+ * 知识库工作区外层壳组件。
  */
 
 import type { ResolvedTheme, ThemeMode } from '../../theme';

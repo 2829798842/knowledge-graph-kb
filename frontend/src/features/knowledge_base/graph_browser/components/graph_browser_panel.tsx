@@ -1,5 +1,5 @@
 /**
- * Graph browser panel.
+ * 图谱浏览面板。
  */
 
 import { useDeferredValue, useEffect, useState } from 'react';

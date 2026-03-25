@@ -1,7 +1,7 @@
-"""后端应用代码的顶层包。"""
+﻿"""后端应用代码的顶层包。"""
 
 from fastapi import FastAPI
-from src.app_factory import create_app as _build_app
+from src.app import create_app as _build_app
 
 
 def create_app() -> FastAPI:
@@ -9,3 +9,5 @@ def create_app() -> FastAPI:
     return _build_app()
 
 __all__ = ["create_app"]
+
+

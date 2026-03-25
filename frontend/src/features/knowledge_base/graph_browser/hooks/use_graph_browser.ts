@@ -1,5 +1,5 @@
 /**
- * Graph-browser workspace slice.
+ * 图谱浏览状态切片。
  */
 
 import { use_knowledge_base_workspace_context } from '../../shared/context/knowledge_base_workspace_context';

@@ -1,5 +1,5 @@
 /**
- * Model-config workspace slice.
+ * 模型配置状态切片。
  */
 
 import { use_knowledge_base_workspace_context } from '../../shared/context/knowledge_base_workspace_context';
@@ -21,4 +21,3 @@ export function use_model_config() {
     run_model_configuration_test: workspace.run_model_configuration_test,
   };
 }
-

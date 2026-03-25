@@ -5,6 +5,7 @@
 import { use_knowledge_base_workspace_context } from '../context/knowledge_base_workspace_context';
 
 const ACTIVE_TASK_STATUSES: Set<string> = new Set(['queued', 'running']);
+const AVAILABLE_SOURCE_STATUSES: Set<string> = new Set(['ready', 'partial']);
 
 function preview_source_names(values: string[], max_count: number): string {
   if (!values.length) {
@@ -20,7 +21,9 @@ export function use_workspace_shell() {
   const workspace = use_knowledge_base_workspace_context();
 
   const active_task_count: number = workspace.tasks.filter((task) => ACTIVE_TASK_STATUSES.has(task.status)).length;
-  const ready_source_count: number = workspace.sources.filter((source) => source.status === 'ready').length;
+  const available_source_count: number = workspace.sources.filter((source) =>
+    AVAILABLE_SOURCE_STATUSES.has(source.status),
+  ).length;
   const selected_source_names: string[] = workspace.sources
     .filter((source) => workspace.selected_source_ids.includes(source.id))
     .map((source) => source.name);
@@ -41,10 +44,10 @@ export function use_workspace_shell() {
     message: workspace.message,
     error: workspace.error,
     query_mode: workspace.query_mode,
-    document_count: workspace.sources.length,
+    document_count: available_source_count,
     task_count: workspace.tasks.length,
     active_task_count,
-    ready_source_count,
+    ready_source_count: available_source_count,
     node_count: workspace.graph.nodes.length,
     edge_count: workspace.graph.edges.length,
     highlight_node_count: workspace.highlighted_node_ids.length,

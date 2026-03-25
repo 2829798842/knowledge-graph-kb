@@ -1,16 +1,19 @@
 /**
- * Query studio panel.
+ * 问答与检索工作台面板。
  */
 
 import { useState } from 'react';
 
 import { QUERY_MODE_OPTIONS } from '../../shared/config/ui_constants';
 import type {
-  AnswerQueryResult,
+  AnswerExecutionRecord,
+  ChatMessageRecord,
+  ChatSessionRecord,
   EntitySearchItemRecord,
   QueryMode,
   RecordSearchItemRecord,
   RelationSearchItemRecord,
+  RetrievalTraceLaneRecord,
   SourceSearchItemRecord,
 } from '../../shared/types/knowledge_base_types';
 import { use_query_studio } from '../hooks/use_query_studio';
@@ -20,18 +23,76 @@ function get_mode_config(query_mode: QueryMode) {
   return QUERY_MODE_OPTIONS.find((item) => item.id === query_mode) ?? QUERY_MODE_OPTIONS[0];
 }
 
+function get_answer_status_label(status: string): string {
+  if (status === 'answered') {
+    return '已生成回答';
+  }
+  if (status === 'no_hit') {
+    return '未命中证据';
+  }
+  if (status === 'empty_query') {
+    return '问题为空';
+  }
+  if (status === 'stale_index') {
+    return '索引失效';
+  }
+  return '等待执行';
+}
+
+function get_retrieval_mode_label(mode: string): string {
+  if (mode === 'structured') {
+    return '结构化检索';
+  }
+  if (mode === 'vector') {
+    return '向量检索';
+  }
+  if (mode === 'hybrid') {
+    return '双路融合';
+  }
+  if (mode === 'hybrid_ppr') {
+    return '双路融合 + PPR';
+  }
+  return '未执行';
+}
+
+function format_latency(value: number): string {
+  return `${value.toFixed(1)} ms`;
+}
+
+function resolve_answer_execution(message: ChatMessageRecord | null): AnswerExecutionRecord {
+  if (message?.execution) {
+    return message.execution;
+  }
+  return {
+    status: 'idle',
+    retrieval_mode: 'none',
+    model_invoked: false,
+    matched_paragraph_count: 0,
+    message: '发送问题后，这里会显示当前回合的执行情况。',
+  };
+}
+
 function result_summary(
   query_mode: QueryMode,
-  answer_result: AnswerQueryResult | null,
+  active_answer_message: ChatMessageRecord | null,
   record_results: RecordSearchItemRecord[],
   entity_results: EntitySearchItemRecord[],
   relation_results: RelationSearchItemRecord[],
   source_results: SourceSearchItemRecord[],
+  answer_sessions: ChatSessionRecord[],
 ): string {
   if (query_mode === 'answer') {
-    return answer_result?.citations.length
-      ? `本次回答引用了 ${answer_result.citations.length} 条证据。`
-      : '执行问答后，这里会显示答案和引用情况。';
+    if (!answer_sessions.length) {
+      return '创建一个会话后，系统会在每轮问答中自动执行结构化检索、向量检索、融合重排和可选的 PPR 重排。';
+    }
+    if (!active_answer_message) {
+      return '输入问题后，系统会把当前回合的回答、证据和检索轨迹记录到会话里。';
+    }
+    const execution = resolve_answer_execution(active_answer_message);
+    if (execution.model_invoked) {
+      return `系统已在当前会话中命中 ${execution.matched_paragraph_count} 条证据，并生成自然语言回答。`;
+    }
+    return execution.message;
   }
   if (query_mode === 'record') {
     return record_results.length ? `已找到 ${record_results.length} 条表格记录。` : '当前还没有表格记录结果。';
@@ -45,10 +106,26 @@ function result_summary(
   return source_results.length ? `已找到 ${source_results.length} 个来源。` : '当前还没有来源结果。';
 }
 
+function RetrievalLaneCard(props: { label: string; lane: RetrievalTraceLaneRecord | null | undefined }) {
+  const { label, lane } = props;
+  return (
+    <div className='kb-inline-card kb-retrieval-lane'>
+      <strong>{label}</strong>
+      <span>{lane?.executed ? '已执行' : `跳过：${lane?.skipped_reason ?? '未执行'}`}</span>
+      <span>{`命中 ${lane?.hit_count ?? 0}`}</span>
+      <span>{`耗时 ${format_latency(lane?.latency_ms ?? 0)}`}</span>
+      <span>{`段落 ${lane?.top_paragraph_ids.slice(0, 3).join('、') || '无'}`}</span>
+    </div>
+  );
+}
+
 export function QueryStudioPanel() {
   const {
     query_mode,
-    answer_result,
+    answer_sessions,
+    active_answer_session_id,
+    answer_messages,
+    active_answer_message,
     record_results,
     entity_results,
     relation_results,
@@ -56,6 +133,8 @@ export function QueryStudioPanel() {
     is_querying,
     set_query_mode,
     execute_query,
+    select_answer_session,
+    create_answer_session,
     focus_entity,
     focus_relation,
     focus_source,
@@ -64,13 +143,14 @@ export function QueryStudioPanel() {
 
   const [query_text, set_query_text] = useState<string>('');
   const mode_config = get_mode_config(query_mode);
+  const answer_execution = resolve_answer_execution(active_answer_message);
 
   return (
     <section className='kb-panel'>
       <header className='kb-section-header'>
         <div>
-          <h2>检索工作台</h2>
-          <p>在当前图谱和来源内容上执行问答、实体、关系、来源与表格记录检索。</p>
+          <h2>问答与检索工作台</h2>
+          <p>问答模式已经完全切到会话流，系统会在每一轮内部完成双路检索、融合重排和可选的 PPR 增强，再生成回答。</p>
         </div>
       </header>
 
@@ -96,6 +176,35 @@ export function QueryStudioPanel() {
             <p>{mode_config.description}</p>
           </div>
 
+          {query_mode === 'answer' ? (
+            <div className='kb-detail-card kb-chat-session-panel'>
+              <div className='kb-section-header'>
+                <div>
+                  <h3>问答会话</h3>
+                  <p>切换不同会话时，会恢复对应的消息流、证据和图谱高亮。</p>
+                </div>
+                <button className='kb-secondary-button' onClick={() => void create_answer_session()} type='button'>
+                  新建会话
+                </button>
+              </div>
+
+              <div className='kb-chat-session-list'>
+                {answer_sessions.map((session) => (
+                  <button
+                    className={`kb-chat-session-card ${active_answer_session_id === session.id ? 'is-active' : ''}`}
+                    key={session.id}
+                    onClick={() => void select_answer_session(session.id)}
+                    type='button'
+                  >
+                    <strong>{session.title}</strong>
+                    <span>{session.last_message_at ?? session.created_at}</span>
+                  </button>
+                ))}
+                {!answer_sessions.length ? <div className='kb-empty-card'>还没有问答会话。</div> : null}
+              </div>
+            </div>
+          ) : null}
+
           <label className='kb-form-field'>
             <span>输入内容</span>
             <textarea
@@ -120,13 +229,13 @@ export function QueryStudioPanel() {
               onClick={() => void execute_query(query_text)}
               type='button'
             >
-              {is_querying ? '检索中...' : '开始检索'}
+              {is_querying ? (query_mode === 'answer' ? '发送中...' : '检索中...') : query_mode === 'answer' ? '发送问题' : '开始检索'}
             </button>
           </div>
 
           <div className='kb-query-note'>
             <strong>使用说明</strong>
-            <span>模式切换后结果会同步到图谱或来源视图，便于继续定位和查看上下文。</span>
+            <span>问答模式会把每一轮的自然语言回答、证据引用、检索轨迹和图谱高亮一起保存到当前会话。</span>
           </div>
         </div>
 
@@ -134,20 +243,56 @@ export function QueryStudioPanel() {
           <div className='kb-detail-card kb-answer-panel'>
             <span className='kb-context-label'>当前结果模式</span>
             <strong>{mode_config.label}</strong>
-            <p>{result_summary(query_mode, answer_result, record_results, entity_results, relation_results, source_results)}</p>
+            <p>{result_summary(query_mode, active_answer_message, record_results, entity_results, relation_results, source_results, answer_sessions)}</p>
           </div>
 
           {query_mode === 'answer' ? (
             <>
+              <div className='kb-detail-card'>
+                <span className='kb-context-label'>当前会话消息流</span>
+                <h3>消息记录</h3>
+                <div className='kb-answer-thread'>
+                  {answer_messages.map((message) => (
+                    <div className={`kb-chat-message ${message.role === 'user' ? 'is-user' : 'is-assistant'}`} key={message.id}>
+                      <strong>{message.role === 'user' ? '用户' : '助手'}</strong>
+                      <p>{message.content}</p>
+                    </div>
+                  ))}
+                  {!answer_messages.length ? <div className='kb-empty-card'>当前会话还没有消息。</div> : null}
+                </div>
+              </div>
+
               <div className='kb-detail-card kb-answer-panel'>
-                <h3>回答</h3>
-                <p>{answer_result?.answer ?? '执行检索后，这里会显示生成答案。'}</p>
+                <span className='kb-context-label'>当前回合回答</span>
+                <h3>自然语言回答</h3>
+                <p>{active_answer_message?.content ?? '发送问题后，这里会显示当前会话最新一轮的自然语言回答。'}</p>
+              </div>
+
+              <div className='kb-detail-card kb-answer-panel'>
+                <span className='kb-context-label'>系统执行情况</span>
+                <h3>知识库检索与模型调用</h3>
+                <div className='kb-meta-strip'>
+                  <span className='kb-meta-pill'>{`状态：${get_answer_status_label(answer_execution.status)}`}</span>
+                  <span className='kb-meta-pill'>{answer_execution.model_invoked ? '已调用模型' : '未调用模型'}</span>
+                  <span className='kb-meta-pill'>{`检索方式：${get_retrieval_mode_label(answer_execution.retrieval_mode)}`}</span>
+                  <span className='kb-meta-pill'>{`命中段落 ${answer_execution.matched_paragraph_count}`}</span>
+                </div>
+                <p>{answer_execution.message}</p>
+
+                <div className='kb-result-grid kb-retrieval-trace-grid'>
+                  <RetrievalLaneCard label='结构化检索' lane={active_answer_message?.retrieval_trace?.structured} />
+                  <RetrievalLaneCard label='向量检索' lane={active_answer_message?.retrieval_trace?.vector} />
+                  <RetrievalLaneCard label='融合重排' lane={active_answer_message?.retrieval_trace?.fusion} />
+                  <RetrievalLaneCard label='PPR 重排' lane={active_answer_message?.retrieval_trace?.ppr} />
+                </div>
+                <span className='kb-helper-text'>{`总耗时 ${format_latency(active_answer_message?.retrieval_trace?.total_ms ?? 0)}`}</span>
               </div>
 
               <div className='kb-detail-card'>
+                <span className='kb-context-label'>当前回合证据</span>
                 <h3>证据引用</h3>
                 <div className='kb-result-stack'>
-                  {answer_result?.citations.map((citation) => (
+                  {active_answer_message?.citations.map((citation) => (
                     <div className='kb-inline-card' key={citation.paragraph_id}>
                       <strong>{citation.source_name}</strong>
                       <span>{citation.excerpt}</span>
@@ -157,7 +302,11 @@ export function QueryStudioPanel() {
                       </button>
                     </div>
                   ))}
-                  {!answer_result?.citations.length ? <div className='kb-empty-card'>暂无可显示的引用。</div> : null}
+                  {!active_answer_message?.citations.length ? (
+                    <div className='kb-empty-card'>
+                      {answer_execution.model_invoked ? '本次回答没有返回可展示的引用。' : '本次没有命中可用证据，因此没有调用模型。'}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </>

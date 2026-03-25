@@ -1,4 +1,4 @@
-"""重构后 HTTP API 使用的 Pydantic 模型。"""
+﻿"""閲嶆瀯鍚?HTTP API 浣跨敤鐨?Pydantic 妯″瀷銆"""
 
 from typing import Any
 
@@ -156,19 +156,70 @@ class CitationItem(BaseModel):
     score: float
 
 
-class AnswerRequest(BaseModel):
-    query: str
+class AnswerExecutionItem(BaseModel):
+    status: str
+    retrieval_mode: str
+    model_invoked: bool
+    matched_paragraph_count: int
+    message: str
+
+
+class RetrievalTraceLaneItem(BaseModel):
+    executed: bool
+    skipped_reason: str | None = None
+    hit_count: int
+    latency_ms: float
+    top_paragraph_ids: list[str] = Field(default_factory=list)
+
+
+class RetrievalTraceItem(BaseModel):
+    structured: RetrievalTraceLaneItem
+    vector: RetrievalTraceLaneItem
+    fusion: RetrievalTraceLaneItem
+    ppr: RetrievalTraceLaneItem
+    total_ms: float
+
+
+class ChatSessionCreateRequest(BaseModel):
+    title: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatMessageCreateRequest(BaseModel):
+    content: str
     source_ids: list[str] = Field(default_factory=list)
     worksheet_names: list[str] = Field(default_factory=list)
-    exact_first: bool = False
-    top_k: int = 6
+    top_k: int | None = None
 
 
-class AnswerResponse(BaseModel):
-    answer: str
+class ChatSessionItem(BaseModel):
+    id: str
+    title: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+    updated_at: str
+    last_message_at: str | None = None
+
+
+class ChatMessageItem(BaseModel):
+    id: str
+    session_id: str
+    role: str
+    content: str
+    turn_index: int
     citations: list[CitationItem] = Field(default_factory=list)
+    execution: AnswerExecutionItem | None = None
+    retrieval_trace: RetrievalTraceItem | None = None
     highlighted_node_ids: list[str] = Field(default_factory=list)
     highlighted_edge_ids: list[str] = Field(default_factory=list)
+    error: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ChatSessionDetailResponse(BaseModel):
+    session: ChatSessionItem
+    messages: list[ChatMessageItem] = Field(default_factory=list)
 
 
 class RecordSearchRequest(BaseModel):
@@ -177,7 +228,6 @@ class RecordSearchRequest(BaseModel):
     worksheet_names: list[str] = Field(default_factory=list)
     filters: dict[str, str] = Field(default_factory=dict)
     limit: int = 20
-    mode: str = "exact_first"
 
 
 class RecordSearchItem(BaseModel):
@@ -338,3 +388,5 @@ class ImportJobItem(BaseModel):
 
 class ImportJobResponse(BaseModel):
     job: ImportJobItem
+
+

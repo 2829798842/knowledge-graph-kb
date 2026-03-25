@@ -3,7 +3,8 @@
  */
 
 import type {
-  AnswerQueryResult,
+  ChatSessionDetailRecord,
+  ChatSessionRecord,
   EntitySearchItemRecord,
   RecordSearchItemRecord,
   RelationSearchItemRecord,
@@ -27,14 +28,35 @@ interface SourceSearchResponse {
   items: SourceSearchItemRecord[];
 }
 
-export function answer_query(payload: {
-  query: string;
-  source_ids?: string[];
-  worksheet_names?: string[];
-  exact_first?: boolean;
-  top_k?: number;
-}): Promise<AnswerQueryResult> {
-  return request_json<AnswerQueryResult>('/api/kb/search/answer', {
+export function list_chat_sessions(limit: number = 50): Promise<ChatSessionRecord[]> {
+  return request_json<ChatSessionRecord[]>(`/api/kb/chat/sessions?limit=${limit}`);
+}
+
+export function create_chat_session(payload: {
+  title?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<ChatSessionRecord> {
+  return request_json<ChatSessionRecord>('/api/kb/chat/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function get_chat_session(session_id: string): Promise<ChatSessionDetailRecord> {
+  return request_json<ChatSessionDetailRecord>(`/api/kb/chat/sessions/${session_id}`);
+}
+
+export function post_chat_message(
+  session_id: string,
+  payload: {
+    content: string;
+    source_ids?: string[];
+    worksheet_names?: string[];
+    top_k?: number;
+  },
+): Promise<ChatSessionDetailRecord> {
+  return request_json<ChatSessionDetailRecord>(`/api/kb/chat/sessions/${session_id}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -47,7 +69,6 @@ export async function search_records(payload: {
   worksheet_names?: string[];
   filters?: Record<string, string>;
   limit?: number;
-  mode?: 'exact_first' | 'hybrid';
 }): Promise<RecordSearchItemRecord[]> {
   const response = await request_json<RecordSearchResponse>('/api/kb/search/records', {
     method: 'POST',

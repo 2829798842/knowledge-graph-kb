@@ -2,18 +2,24 @@
  * Query execution and query-result state.
  */
 
-import { startTransition, useState, type Dispatch, type SetStateAction } from 'react';
+import { startTransition, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
 
 import { QUERY_MODE_LABELS } from '../../config/ui_constants';
 import {
-  answer_query,
+  create_chat_session,
+  get_chat_session,
+  list_chat_sessions,
+  post_chat_message,
   search_entities,
   search_records,
   search_relations,
   search_sources,
 } from '../../api/query_api';
 import type {
-  AnswerQueryResult,
+  AnswerExecutionRecord,
+  ChatMessageRecord,
+  ChatSessionDetailRecord,
+  ChatSessionRecord,
   EntitySearchItemRecord,
   QueryMode,
   RecordSearchItemRecord,
@@ -33,6 +39,34 @@ interface QueryWorkspaceStateProps {
   set_highlighted_edge_ids: Dispatch<SetStateAction<string[]>>;
 }
 
+const DEFAULT_SESSION_TITLE = '新对话';
+
+function resolve_answer_execution(message: ChatMessageRecord | null): AnswerExecutionRecord {
+  if (message?.execution) {
+    return message.execution;
+  }
+  return {
+    status: 'idle',
+    retrieval_mode: 'none',
+    model_invoked: false,
+    matched_paragraph_count: 0,
+    message: '等待执行问答。',
+  };
+}
+
+function build_answer_message(message: ChatMessageRecord): string {
+  const execution = resolve_answer_execution(message);
+  if (execution.model_invoked) {
+    return `问答完成，系统已先检索知识库，并基于 ${execution.matched_paragraph_count} 条证据生成自然语言回答。`;
+  }
+  return execution.message;
+}
+
+function latest_assistant_message(messages: ChatMessageRecord[]): ChatMessageRecord | null {
+  const assistant_messages = messages.filter((message) => message.role === 'assistant');
+  return assistant_messages.length ? assistant_messages[assistant_messages.length - 1] : null;
+}
+
 export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
   const {
     query_mode,
@@ -45,15 +79,91 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
     set_highlighted_edge_ids,
   } = props;
 
-  const [answer_result, set_answer_result] = useState<AnswerQueryResult | null>(null);
+  const [answer_sessions, set_answer_sessions] = useState<ChatSessionRecord[]>([]);
+  const [active_answer_session_id, set_active_answer_session_id] = useState<string | null>(null);
+  const [answer_messages, set_answer_messages] = useState<ChatMessageRecord[]>([]);
   const [record_results, set_record_results] = useState<RecordSearchItemRecord[]>([]);
   const [entity_results, set_entity_results] = useState<EntitySearchItemRecord[]>([]);
   const [relation_results, set_relation_results] = useState<RelationSearchItemRecord[]>([]);
   const [source_results, set_source_results] = useState<SourceSearchItemRecord[]>([]);
   const [is_querying, set_is_querying] = useState<boolean>(false);
+  const active_answer_message: ChatMessageRecord | null = latest_assistant_message(answer_messages);
+
+  async function apply_session_detail(detail: ChatSessionDetailRecord): Promise<void> {
+    const latestAnswerMessage = latest_assistant_message(detail.messages);
+    startTransition(() => {
+      set_active_answer_session_id(detail.session.id);
+      set_answer_messages(detail.messages);
+      set_highlighted_node_ids(latestAnswerMessage?.highlighted_node_ids ?? []);
+      set_highlighted_edge_ids(latestAnswerMessage?.highlighted_edge_ids ?? []);
+    });
+  }
+
+  async function hydrate_answer_sessions(preferred_session_id?: string | null): Promise<void> {
+    const sessions = await list_chat_sessions();
+    startTransition(() => {
+      set_answer_sessions(sessions);
+    });
+    const next_session_id = preferred_session_id ?? active_answer_session_id ?? sessions[0]?.id ?? null;
+    if (!next_session_id) {
+      startTransition(() => {
+        set_active_answer_session_id(null);
+        set_answer_messages([]);
+      });
+      return;
+    }
+    const detail = await get_chat_session(next_session_id);
+    await apply_session_detail(detail);
+  }
+
+  async function ensure_active_session(): Promise<string> {
+    if (active_answer_session_id) {
+      return active_answer_session_id;
+    }
+    const created = await create_chat_session({
+      title: DEFAULT_SESSION_TITLE,
+      metadata: { source_ids: selected_source_ids },
+    });
+    startTransition(() => {
+      set_answer_sessions((current_sessions) => [created, ...current_sessions.filter((item) => item.id !== created.id)]);
+      set_active_answer_session_id(created.id);
+    });
+    return created.id;
+  }
+
+  async function select_answer_session(session_id: string): Promise<void> {
+    const detail = await get_chat_session(session_id);
+    await apply_session_detail(detail);
+  }
+
+  async function create_answer_session(): Promise<void> {
+    try {
+      const session = await create_chat_session({
+        title: DEFAULT_SESSION_TITLE,
+        metadata: { source_ids: selected_source_ids },
+      });
+      startTransition(() => {
+        set_answer_sessions((current_sessions) => [session, ...current_sessions.filter((item) => item.id !== session.id)]);
+        set_active_answer_session_id(session.id);
+        set_answer_messages([]);
+        set_highlighted_node_ids([]);
+        set_highlighted_edge_ids([]);
+      });
+      set_message(`已创建问答会话：${session.title}`);
+      set_error(null);
+    } catch (session_error) {
+      set_error((session_error as Error).message);
+    }
+  }
+
+  useEffect(() => {
+    void hydrate_answer_sessions().catch((session_error) => {
+      set_error((session_error as Error).message);
+    });
+  }, []);
 
   async function execute_query(query_text: string): Promise<void> {
-    const normalized_query: string = query_text.trim();
+    const normalized_query = query_text.trim();
     if (!normalized_query) {
       return;
     }
@@ -71,23 +181,26 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
         set_relation_results([]);
         set_source_results([]);
 
-        const result = await answer_query({
-          query: normalized_query,
+        const session_id = await ensure_active_session();
+        const detail = await post_chat_message(session_id, {
+          content: normalized_query,
           source_ids: selected_source_ids.length ? selected_source_ids : undefined,
-          exact_first: false,
           top_k: 6,
         });
+        await apply_session_detail(detail);
         startTransition(() => {
-          set_answer_result(result);
-          set_highlighted_node_ids(result.highlighted_node_ids);
-          set_highlighted_edge_ids(result.highlighted_edge_ids);
-          set_message('问答完成，图谱高亮已同步。');
-          set_error(null);
+          set_answer_sessions((current_sessions) => {
+            const next_session = detail.session;
+            return [next_session, ...current_sessions.filter((item) => item.id !== next_session.id)];
+          });
         });
+        const latestAnswerMessage = latest_assistant_message(detail.messages);
+        if (latestAnswerMessage) {
+          set_message(build_answer_message(latestAnswerMessage));
+        }
+        set_error(null);
         return;
       }
-
-      set_answer_result(null);
 
       if (query_mode === 'record') {
         set_entity_results([]);
@@ -97,7 +210,6 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
           query: normalized_query,
           source_ids: selected_source_ids.length ? selected_source_ids : undefined,
           limit: 20,
-          mode: 'exact_first',
         });
         startTransition(() => {
           set_record_results(items);
@@ -149,12 +261,17 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
   }
 
   return {
-    answer_result,
+    answer_sessions,
+    active_answer_session_id,
+    answer_messages,
+    active_answer_message,
     record_results,
     entity_results,
     relation_results,
     source_results,
     is_querying,
     execute_query,
+    select_answer_session,
+    create_answer_session,
   };
 }

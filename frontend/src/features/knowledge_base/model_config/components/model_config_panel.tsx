@@ -1,5 +1,5 @@
 /**
- * Model configuration panel.
+ * 模型配置面板。
  */
 
 import {
@@ -276,4 +276,3 @@ export function ModelConfigPanel() {
     </section>
   );
 }
-
