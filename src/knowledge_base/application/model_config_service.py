@@ -5,7 +5,7 @@ from typing import Final
 from src.config import Settings
 from src.knowledge_base.domain import RuntimeModelConfiguration
 from src.knowledge_base.infrastructure import ModelConfigRepository, VectorIndex
-from src.utils.secret_utils import LocalSecretCipher
+from src.utils.secret_utils import LocalSecretCipher, SecretEncryptionError
 
 MODEL_PROVIDER_BASE_URLS: Final[dict[str, str]] = {
     "openai": "https://api.openai.com/v1",
@@ -14,6 +14,7 @@ MODEL_PROVIDER_BASE_URLS: Final[dict[str, str]] = {
     "custom": "",
 }
 REINDEX_NOTICE: Final[str] = "嵌入模型已变更，现有向量索引已清空，请重新导入内容。"
+INVALID_SAVED_API_KEY_NOTICE: Final[str] = "已保存的 API Key 无法解密，请重新保存一次模型配置。"
 
 
 class ModelConfigService:
@@ -34,6 +35,12 @@ class ModelConfigService:
     def resolve_runtime_configuration(self) -> RuntimeModelConfiguration:
         """解析当前生效的运行时模型配置。"""
 
+        runtime_config, _ = self._resolve_runtime_configuration_with_notice()
+        return runtime_config
+
+    def _resolve_runtime_configuration_with_notice(self) -> tuple[RuntimeModelConfiguration, str | None]:
+        """解析运行时配置，并在已保存密钥异常时返回提示。"""
+
         model_config = self.repository.get()
         provider = self._normalize_provider(
             str(model_config["provider"]) if model_config is not None else self.settings.model_provider,
@@ -42,7 +49,14 @@ class ModelConfigService:
             provider,
             str(model_config["base_url"]) if model_config is not None else self.settings.model_base_url,
         )
-        saved_api_key = self._resolve_saved_api_key(str(model_config["api_key"]) if model_config and model_config.get("api_key") else None)
+        saved_api_key = ""
+        notice: str | None = None
+        if model_config is not None and model_config.get("api_key"):
+            try:
+                saved_api_key = self._resolve_saved_api_key(str(model_config["api_key"]))
+            except SecretEncryptionError:
+                saved_api_key = ""
+                notice = INVALID_SAVED_API_KEY_NOTICE
         env_api_key = self.settings.openai_api_key.strip()
         api_key = saved_api_key or env_api_key
         api_key_source = "saved" if saved_api_key else ("environment" if env_api_key else "none")
@@ -56,19 +70,23 @@ class ModelConfigService:
             if model_config is not None and str(model_config.get("embedding_model") or "").strip()
             else self.settings.openai_embed_model
         )
-        return RuntimeModelConfiguration(
-            provider=provider,
-            base_url=base_url,
-            api_key=api_key,
-            llm_model=llm_model,
-            embedding_model=embedding_model,
-            api_key_source=api_key_source,
+        return (
+            RuntimeModelConfiguration(
+                provider=provider,
+                base_url=base_url,
+                api_key=api_key,
+                llm_model=llm_model,
+                embedding_model=embedding_model,
+                api_key_source=api_key_source,
+            ),
+            notice,
         )
 
     def get_public_configuration(self, *, reindex_required: bool = False, notice: str | None = None) -> dict[str, object]:
         """返回可安全提供给前端的模型配置视图。"""
 
-        runtime_config = self.resolve_runtime_configuration()
+        runtime_config, runtime_notice = self._resolve_runtime_configuration_with_notice()
+        combined_notice = notice or runtime_notice
         return {
             "provider": runtime_config.provider,
             "base_url": runtime_config.base_url,
@@ -78,7 +96,7 @@ class ModelConfigService:
             "api_key_preview": self._mask_api_key(runtime_config.api_key) if runtime_config.api_key else None,
             "api_key_source": runtime_config.api_key_source,
             "reindex_required": reindex_required,
-            "notice": notice,
+            "notice": combined_notice,
         }
 
     def update_configuration(self, payload: dict[str, object]) -> dict[str, object]:

@@ -156,6 +156,13 @@ export const STRATEGY_LABELS: LabelMap = {
   quote: '引述型',
 };
 
+export const KNOWLEDGE_TYPE_LABELS: LabelMap = {
+  mixed: '混合型',
+  narrative: '叙述型',
+  factual: '事实型',
+  quote: '引述型',
+};
+
 export const THEME_MODE_OPTIONS: Array<{ id: ThemeMode; label: string }> = [
   { id: 'system', label: '跟随系统' },
   { id: 'light', label: '浅色' },
@@ -230,6 +237,10 @@ export const TASK_STATUS_ORDER: Record<string, number> = {
 
 export function get_strategy_label(value: string): string {
   return STRATEGY_LABELS[value] ?? value;
+}
+
+export function get_knowledge_type_label(value: string): string {
+  return KNOWLEDGE_TYPE_LABELS[value] ?? STRATEGY_LABELS[value] ?? value;
 }
 
 export function get_status_label(value: string): string {

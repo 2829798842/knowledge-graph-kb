@@ -15,7 +15,7 @@ from src.api.schemas import (
     SourceSearchRequest,
     SourceSearchResponse,
 )
-from src.knowledge_base.infrastructure.openai_gateway import OpenAiConfigurationError
+from src.knowledge_base.infrastructure.openai_gateway import OpenAiConfigurationError, OpenAiRequestError
 
 router = APIRouter(prefix="/api/kb/search", tags=["kb-search"])
 
@@ -32,6 +32,8 @@ def answer_query(payload: AnswerRequest, search_service=Depends(get_search_servi
         )
     except OpenAiConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except OpenAiRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return AnswerResponse(**result)
@@ -39,14 +41,21 @@ def answer_query(payload: AnswerRequest, search_service=Depends(get_search_servi
 
 @router.post("/records", response_model=RecordSearchResponse)
 def search_records(payload: RecordSearchRequest, search_service=Depends(get_search_service)) -> RecordSearchResponse:
-    result = search_service.search_records(
-        query=payload.query,
-        source_ids=payload.source_ids,
-        worksheet_names=payload.worksheet_names,
-        filters=payload.filters,
-        limit=payload.limit,
-        mode=payload.mode,
-    )
+    try:
+        result = search_service.search_records(
+            query=payload.query,
+            source_ids=payload.source_ids,
+            worksheet_names=payload.worksheet_names,
+            filters=payload.filters,
+            limit=payload.limit,
+            mode=payload.mode,
+        )
+    except OpenAiConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except OpenAiRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return RecordSearchResponse(**result)
 
 

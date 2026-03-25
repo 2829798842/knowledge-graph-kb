@@ -104,6 +104,12 @@ class SearchService:
         normalized_query = str(query or "").strip()
         if not normalized_query:
             return self._empty_response(EMPTY_QUERY_MESSAGE)
+        candidate_paragraph_ids = self._resolve_candidate_paragraph_ids(
+            source_ids=source_ids,
+            worksheet_names=worksheet_names,
+        )
+        if worksheet_names and not candidate_paragraph_ids:
+            return self._empty_response(NO_HIT_MESSAGE)
         if exact_first or worksheet_names:
             record_response = self.search_records(
                 query=normalized_query,
@@ -126,6 +132,7 @@ class SearchService:
                 query_embedding=query_embedding,
                 limit=max(1, min(top_k, self.settings.query_context_chunks)),
                 source_ids=source_ids,
+                paragraph_ids=candidate_paragraph_ids,
             )
         except StaleVectorIndexError:
             return self._empty_response(STALE_INDEX_MESSAGE)
@@ -198,6 +205,22 @@ class SearchService:
                 for row in rows
             ]
         }
+
+    def _resolve_candidate_paragraph_ids(
+        self,
+        *,
+        source_ids: list[str] | None = None,
+        worksheet_names: list[str] | None = None,
+    ) -> list[str] | None:
+        if not worksheet_names:
+            return None
+        rows = self.record_repository.list_candidate_rows(
+            source_ids=source_ids,
+            worksheet_names=worksheet_names,
+        )
+        if not rows:
+            return []
+        return self._deduplicate([str(row["paragraph_id"]) for row in rows if str(row.get("paragraph_id") or "").strip()])
 
     def _score_exact_matches(
         self,

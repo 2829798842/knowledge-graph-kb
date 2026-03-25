@@ -16,9 +16,16 @@ import {
   SUPPORTED_UPLOAD_HINT,
   TASK_STATUS_ORDER,
 } from '../../shared/config/ui_constants';
-import type { ImportMode } from '../../shared/types/knowledge_base_types';
+import type { ImportMode, ImportTaskRecord } from '../../shared/types/knowledge_base_types';
 import { use_import_center } from '../hooks/use_import_center';
 import '../styles/import_center_panel.css';
+
+function resolve_task_mode_label(task: ImportTaskRecord): string {
+  const task_source: string = task.source.split(':', 1)[0] || '';
+  const file_source_kind: string = task.files[0]?.source_kind ?? '';
+  const mode_key: string = file_source_kind || task_source || task.input_mode;
+  return get_input_mode_label(mode_key || task.input_mode);
+}
 
 export function ImportCenterPanel() {
   const {
@@ -252,7 +259,7 @@ export function ImportCenterPanel() {
               <article className='kb-task-card' key={task.id}>
                 <div className='kb-task-header'>
                   <div>
-                    <strong>{`${get_input_mode_label(task.source)}任务`}</strong>
+                    <strong>{`${resolve_task_mode_label(task)}任务`}</strong>
                     <span>{`当前阶段：${get_step_label(task.current_step)}`}</span>
                   </div>
                   <span className='kb-task-status'>{get_status_label(task.status)}</span>

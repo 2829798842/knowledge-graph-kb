@@ -74,7 +74,7 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
         const result = await answer_query({
           query: normalized_query,
           source_ids: selected_source_ids.length ? selected_source_ids : undefined,
-          exact_first: true,
+          exact_first: false,
           top_k: 6,
         });
         startTransition(() => {

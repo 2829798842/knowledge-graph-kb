@@ -6,6 +6,7 @@ import { useDeferredValue, useEffect, useState } from 'react';
 
 import {
   get_input_mode_label,
+  get_knowledge_type_label,
   get_status_label,
   get_strategy_label,
   get_vector_state_label,
@@ -144,7 +145,7 @@ export function SourceBrowserPanel() {
                   <strong>{`#${paragraph.position + 1}`}</strong>
                   <span>{paragraph.content}</span>
                   <div className='kb-meta-strip'>
-                    <span className='kb-meta-pill'>{get_strategy_label(paragraph.knowledge_type)}</span>
+                    <span className='kb-meta-pill'>{get_knowledge_type_label(paragraph.knowledge_type)}</span>
                     <span className='kb-meta-pill'>{`词元 ${paragraph.token_count}`}</span>
                     <span className='kb-meta-pill'>{get_vector_state_label(paragraph.vector_state)}</span>
                   </div>

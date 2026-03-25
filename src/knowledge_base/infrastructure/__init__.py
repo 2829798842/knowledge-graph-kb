@@ -1,6 +1,6 @@
 """Exports for runtime infrastructure services."""
 
-from .openai_gateway import OpenAiGateway
+from .openai_gateway import OpenAiConfigurationError, OpenAiGateway, OpenAiRequestError
 from .sqlite_gateway import SQLiteGateway
 from .sqlite_repositories import (
     GraphRepository,
@@ -17,7 +17,9 @@ __all__ = [
     "GraphRepository",
     "ImportJobRepository",
     "ModelConfigRepository",
+    "OpenAiConfigurationError",
     "OpenAiGateway",
+    "OpenAiRequestError",
     "RecordRepository",
     "SearchRepository",
     "SourceRepository",

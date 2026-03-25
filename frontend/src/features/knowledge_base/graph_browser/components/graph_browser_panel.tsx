@@ -7,6 +7,7 @@ import { useDeferredValue, useEffect, useState } from 'react';
 import type { ResolvedTheme } from '../../../../theme';
 import {
   get_input_mode_label,
+  get_knowledge_type_label,
   get_strategy_label,
   NODE_TYPE_LABELS,
   PREDICATE_SUGGESTIONS,
@@ -89,7 +90,7 @@ function collect_node_import_rows(node_type: string, metadata: Record<string, un
       rows.push(['表格来源', '是']);
     }
     if (knowledge_type) {
-      rows.push(['知识类型', get_strategy_label(knowledge_type)]);
+      rows.push(['知识类型', get_knowledge_type_label(knowledge_type)]);
     }
     if (worksheet_name) {
       rows.push(['工作表', worksheet_name]);

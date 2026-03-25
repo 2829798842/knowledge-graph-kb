@@ -1,11 +1,20 @@
-"""用于嵌入、抽取、问答与连通性测试的 OpenAI 兼容网关。"""
+"""OpenAI-compatible gateway for embeddings, extraction, and answering."""
 
+from collections.abc import Callable
 import json
 import re
-from collections.abc import Callable
 from typing import Any
 
-from openai import OpenAI
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AuthenticationError,
+    BadRequestError,
+    OpenAI,
+    PermissionDeniedError,
+    RateLimitError,
+)
 
 from src.config import Settings
 from src.knowledge_base.domain import RuntimeModelConfiguration
@@ -17,11 +26,19 @@ CONNECTION_TEST_INPUT = "ping"
 
 
 class OpenAiConfigurationError(RuntimeError):
-    """当运行时模型配置不完整时抛出。"""
+    """Raised when the runtime model configuration is incomplete."""
+
+
+class OpenAiRequestError(RuntimeError):
+    """Raised when an upstream model provider request fails."""
+
+    def __init__(self, message: str, *, status_code: int = 503) -> None:
+        super().__init__(message)
+        self.status_code = status_code
 
 
 class OpenAiGateway:
-    """使用解析后的运行时模型配置调用 OpenAI 兼容 API。"""
+    """Call an OpenAI-compatible API using resolved runtime configuration."""
 
     def __init__(
         self,
@@ -35,8 +52,6 @@ class OpenAiGateway:
         self._client_signature: tuple[str, str, str] | None = None
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        """为一批文本生成向量嵌入。"""
-
         if not texts:
             return []
         runtime_config = self.runtime_config_provider()
@@ -45,10 +60,13 @@ class OpenAiGateway:
         embeddings: list[list[float]] = []
         for start_index in range(0, len(texts), batch_size):
             batch_texts = texts[start_index : start_index + batch_size]
-            response = client.embeddings.create(
-                model=runtime_config.embedding_model,
-                input=batch_texts,
-            )
+            try:
+                response = client.embeddings.create(
+                    model=runtime_config.embedding_model,
+                    input=batch_texts,
+                )
+            except Exception as exc:  # noqa: BLE001
+                raise self._translate_client_error(exc) from exc
             embeddings.extend([[float(value) for value in item.embedding] for item in response.data])
         return embeddings
 
@@ -59,8 +77,6 @@ class OpenAiGateway:
         text: str,
         window_label: str = "window",
     ) -> dict[str, Any]:
-        """调用模型抽取实体与关系。"""
-
         runtime_config = self.runtime_config_provider()
         raw_output = self._chat_completion(
             runtime_config,
@@ -101,8 +117,6 @@ class OpenAiGateway:
         return {"entities": entities, "relations": relations}
 
     def answer_query(self, query: str, context_blocks: list[dict[str, str]]) -> str:
-        """基于上下文片段生成问答结果。"""
-
         context_text = "\n\n".join(
             f"[{block['chunk_id']}] {block['document_name']}\n{block['excerpt']}"
             for block in context_blocks
@@ -115,8 +129,6 @@ class OpenAiGateway:
         ).strip()
 
     def test_connection(self, runtime_config: RuntimeModelConfiguration) -> tuple[bool, bool]:
-        """测试通用模型与嵌入模型的可用性。"""
-
         client = self._client_for(runtime_config)
         embedding_ok = False
         llm_ok = False
@@ -142,7 +154,7 @@ class OpenAiGateway:
 
     def _client_for(self, runtime_config: RuntimeModelConfiguration) -> OpenAI:
         if not runtime_config.api_key:
-            raise OpenAiConfigurationError("尚未配置可用的 API Key，请先保存模型配置。")
+            raise OpenAiConfigurationError("当前没有可用的 API Key，请先在模型配置中保存可用密钥。")
         signature = (
             runtime_config.provider,
             runtime_config.base_url,
@@ -173,7 +185,10 @@ class OpenAiGateway:
         }
         if max_tokens is not None:
             request_kwargs["max_tokens"] = max_tokens
-        response = self._client_for(runtime_config).chat.completions.create(**request_kwargs)
+        try:
+            response = self._client_for(runtime_config).chat.completions.create(**request_kwargs)
+        except Exception as exc:  # noqa: BLE001
+            raise self._translate_client_error(exc) from exc
         message_content: Any = response.choices[0].message.content if response.choices else ""
         return self._message_content_to_text(message_content)
 
@@ -211,3 +226,35 @@ class OpenAiGateway:
         if brace_match:
             return json.loads(brace_match.group(1))
         return json.loads(raw_text)
+
+    def _translate_client_error(self, exc: Exception) -> OpenAiRequestError:
+        if isinstance(exc, OpenAiRequestError):
+            return exc
+        if isinstance(exc, OpenAiConfigurationError):
+            return OpenAiRequestError(str(exc), status_code=503)
+        if isinstance(exc, (AuthenticationError, PermissionDeniedError)):
+            return OpenAiRequestError(
+                "模型服务认证失败，请检查 API Key、Base URL 和供应商配置是否正确。",
+                status_code=503,
+            )
+        if isinstance(exc, RateLimitError):
+            return OpenAiRequestError(
+                "模型服务已触发限流或配额不足，请稍后重试并检查账户额度。",
+                status_code=503,
+            )
+        if isinstance(exc, (APIConnectionError, APITimeoutError)):
+            return OpenAiRequestError(
+                "无法连接到模型服务，请检查网络连通性和 Base URL 配置。",
+                status_code=503,
+            )
+        if isinstance(exc, BadRequestError):
+            return OpenAiRequestError(
+                "模型服务拒绝了当前请求，请检查所选模型名称和供应商配置是否匹配。",
+                status_code=502,
+            )
+        if isinstance(exc, APIStatusError):
+            return OpenAiRequestError(
+                "模型服务返回了异常响应，请稍后重试。",
+                status_code=502,
+            )
+        return OpenAiRequestError("模型服务发生未知错误，请检查当前模型配置后重试。", status_code=502)

@@ -9,7 +9,7 @@ from src.api.schemas import (
     ModelConfigTestResponse,
     ModelConfigUpdateRequest,
 )
-from src.knowledge_base.infrastructure.openai_gateway import OpenAiConfigurationError
+from src.knowledge_base.infrastructure.openai_gateway import OpenAiConfigurationError, OpenAiRequestError
 
 router = APIRouter(prefix="/api/kb/config/model", tags=["kb-config"])
 
@@ -45,6 +45,10 @@ def test_model_configuration(
             llm_ok=llm_ok,
             embedding_ok=embedding_ok,
         )
-    except (ValueError, OpenAiConfigurationError) as exc:
+    except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OpenAiConfigurationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OpenAiRequestError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
     return ModelConfigTestResponse(**result)
