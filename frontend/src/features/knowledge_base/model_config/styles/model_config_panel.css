@@ -2,46 +2,59 @@
  * Model-config panel styles.
  */
 
-.kb-model-config-layout {
+.kb-model-shell {
   display: grid;
-  grid-template-columns: minmax(360px, 0.96fr) minmax(0, 1.04fr);
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: 14px;
   min-height: 0;
   height: 100%;
   overflow: hidden;
 }
 
-.kb-model-config-form,
-.kb-model-config-status {
+.kb-model-main,
+.kb-model-rail {
   min-height: 0;
 }
 
-.kb-model-config-form {
+.kb-model-main {
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.kb-model-rail {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   align-content: start;
   overflow: auto;
   padding-right: 4px;
 }
 
-.kb-model-config-status {
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.kb-model-config-hero {
+.kb-model-stage,
+.kb-model-form-card {
   display: grid;
-  gap: 6px;
-  padding: 16px 18px;
-  border-radius: 20px;
-  background:
-    linear-gradient(145deg, color-mix(in srgb, var(--accent-ghost-bg) 70%, transparent), transparent),
-    color-mix(in srgb, var(--panel-surface) 96%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 16%, transparent);
+  gap: 14px;
 }
 
-.kb-model-config-hero h3 {
+.kb-model-hero {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-primary) 11%, transparent), transparent 36%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-surface) 98%, transparent), color-mix(in srgb, var(--accent-ghost-bg) 66%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 14%, transparent);
+}
+
+.kb-model-hero h3,
+.kb-model-form-card h3 {
   margin: 0;
+}
+
+.kb-model-hero p,
+.kb-model-form-card p {
+  margin: 0;
+  color: var(--text-secondary);
 }
 
 .kb-model-status-grid {
@@ -51,7 +64,8 @@
 }
 
 .kb-model-status-row,
-.kb-model-test-row {
+.kb-model-test-row,
+.kb-model-step {
   display: grid;
   gap: 6px;
   padding: 12px 14px;
@@ -69,7 +83,8 @@
   word-break: break-word;
 }
 
-.kb-model-test-status {
+.kb-model-test-status,
+.kb-model-steps {
   display: grid;
   gap: 12px;
 }
@@ -82,11 +97,13 @@
   border: 1px solid color-mix(in srgb, var(--card-border) 80%, transparent);
 }
 
-@media (max-width: 1200px) {
-  .kb-model-config-layout {
+@media (max-width: 1280px) {
+  .kb-model-shell {
     grid-template-columns: 1fr;
   }
+}
 
+@media (max-width: 780px) {
   .kb-model-status-grid {
     grid-template-columns: 1fr;
   }

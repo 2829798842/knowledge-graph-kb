@@ -1,5 +1,5 @@
 /**
- * Compact workspace toolbar.
+ * Workspace header for the active page.
  */
 
 import { WORKSPACE_TABS } from '../config/ui_constants';
@@ -14,42 +14,21 @@ export function WorkspaceHeader() {
     edge_count,
     message,
     error,
-    set_active_workspace,
   } = use_workspace_shell();
 
   const active_tab = WORKSPACE_TABS.find((tab) => tab.id === active_workspace) ?? WORKSPACE_TABS[0];
+  const status_text = error ?? message ?? '工作区已就绪';
 
   return (
     <header className='kb-toolbar'>
-      <div className='kb-toolbar-main'>
-        <div className='kb-toolbar-title'>
-          <span className='kb-context-label'>知识图谱工作台</span>
-          <strong>知识库工作台</strong>
-        </div>
-
-        <label className='kb-form-field kb-toolbar-field'>
-          <span>当前页面</span>
-          <select
-            aria-label='选择工作页面'
-            onChange={(event) => set_active_workspace(event.target.value as typeof active_workspace)}
-            value={active_workspace}
-          >
-            {WORKSPACE_TABS.map((tab) => (
-              <option key={tab.id} value={tab.id}>
-                {tab.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <div className='kb-toolbar-copy'>
-          <strong>{active_tab.label}</strong>
-          <span>{active_tab.description}</span>
-        </div>
+      <div className='kb-toolbar-copy'>
+        <span className='kb-context-label'>Current Workspace</span>
+        <strong>{active_tab.label}</strong>
+        <p>{active_tab.description}</p>
       </div>
 
       <div className='kb-toolbar-status'>
-        <strong className={`kb-toolbar-message ${error ? 'is-error' : ''}`}>{error ?? message}</strong>
+        <strong className={`kb-toolbar-message ${error ? 'is-error' : ''}`}>{status_text}</strong>
 
         <div className='kb-meta-strip'>
           <span className='kb-meta-pill'>{`来源 ${document_count}`}</span>

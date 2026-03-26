@@ -2,21 +2,37 @@
  * Route workspace body.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 
 import type { ResolvedTheme } from '../../../../theme';
-import { GraphBrowserPanel } from '../../graph_browser/components/graph_browser_panel';
-import { ImportCenterPanel } from '../../import_center/components/import_center_panel';
-import { ModelConfigPanel } from '../../model_config/components/model_config_panel';
-import { QueryStudioPanel } from '../../query_studio/components/query_studio_panel';
-import { SourceBrowserPanel } from '../../source_browser/components/source_browser_panel';
 import { WORKSPACE_TABS } from '../config/ui_constants';
 import { use_workspace_shell } from '../hooks/use_workspace_shell';
 import type { WorkspaceTab } from '../types/knowledge_base_types';
+import { WorkspaceLoadingState } from './workspace_loading_state';
 
 interface WorkspaceBodyProps {
   resolved_theme: ResolvedTheme;
 }
+
+const ImportCenterPanel = lazy(async () => ({
+  default: (await import('../../import_center/components/import_center_panel')).ImportCenterPanel,
+}));
+
+const ModelConfigPanel = lazy(async () => ({
+  default: (await import('../../model_config/components/model_config_panel')).ModelConfigPanel,
+}));
+
+const GraphBrowserPanel = lazy(async () => ({
+  default: (await import('../../graph_browser/components/graph_browser_panel')).GraphBrowserPanel,
+}));
+
+const QueryStudioPanel = lazy(async () => ({
+  default: (await import('../../query_studio/components/query_studio_panel')).QueryStudioPanel,
+}));
+
+const SourceBrowserPanel = lazy(async () => ({
+  default: (await import('../../source_browser/components/source_browser_panel')).SourceBrowserPanel,
+}));
 
 export function WorkspaceBody(props: WorkspaceBodyProps) {
   const { resolved_theme } = props;
@@ -55,7 +71,11 @@ export function WorkspaceBody(props: WorkspaceBodyProps) {
             hidden={!is_active}
             key={tab.id}
           >
-            {panels[tab.id]}
+            <Suspense
+              fallback={<WorkspaceLoadingState description={tab.description} title={tab.label} />}
+            >
+              {panels[tab.id]}
+            </Suspense>
           </section>
         );
       })}

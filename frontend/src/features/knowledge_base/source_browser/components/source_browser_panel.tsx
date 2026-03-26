@@ -1,5 +1,5 @@
 /**
- * 来源浏览面板
+ * Source-browser panel.
  */
 
 import { useDeferredValue, useEffect, useRef, useState } from 'react';
@@ -61,34 +61,46 @@ export function SourceBrowserPanel() {
   const paragraph_virtualizer = useVirtualizer({
     count: filtered_paragraphs.length,
     getScrollElement: () => paragraph_scroll_ref.current,
-    estimateSize: () => 280,
+    estimateSize: () => 260,
     overscan: 6,
     measureElement: (element) => element?.getBoundingClientRect().height ?? 0,
   });
+
+  const active_source = source_detail?.source ?? sources.find((source) => source.id === selected_source_browser_id) ?? null;
+  const active_source_summary = active_source ? source_summary(active_source) : '选择一个来源后，这里会显示摘要和元数据。';
+  const metadata_text =
+    source_detail && Object.keys(source_detail.source.metadata).length
+      ? JSON.stringify(source_detail.source.metadata, null, 2)
+      : null;
 
   return (
     <section className='kb-panel'>
       <header className='kb-section-header'>
         <div>
           <h2>来源浏览</h2>
-          <p>从图谱回查原始来源 元数据 与段落证据</p>
+          <p>把来源目录和阅读区拆开，左侧负责选来源，右侧只负责看内容和回到图谱。</p>
         </div>
       </header>
 
-      <div className='kb-panel-split kb-panel-split-source'>
-        <aside className='kb-sidebar kb-source-sidebar'>
-          <div className='kb-filter-card'>
+      <div className='kb-source-shell'>
+        <aside className='kb-source-rail'>
+          <div className='kb-detail-card'>
+            <span className='kb-context-label'>Catalog</span>
             <h3>来源目录</h3>
-            <p>{`${filtered_sources.length} 个来源符合当前筛选`}</p>
             <label className='kb-form-field'>
               <span>来源关键词</span>
               <input
                 onChange={(event) => set_source_keyword(event.target.value)}
-                placeholder='按名称 摘要 类型或导入方式搜索'
+                placeholder='按名称、摘要、类型或导入方式搜索'
                 type='search'
                 value={source_keyword}
               />
             </label>
+
+            <div className='kb-meta-strip'>
+              <span className='kb-meta-pill'>{`总数 ${sources.length}`}</span>
+              <span className='kb-meta-pill'>{`匹配 ${filtered_sources.length}`}</span>
+            </div>
           </div>
 
           <div className='kb-source-list'>
@@ -108,35 +120,36 @@ export function SourceBrowserPanel() {
                 </div>
               </button>
             ))}
-            {!filtered_sources.length ? <div className='kb-empty-card'>没有匹配的来源</div> : null}
+            {!filtered_sources.length ? <div className='kb-empty-card'>没有匹配的来源。</div> : null}
           </div>
         </aside>
 
-        <div className='kb-detail-panel kb-source-detail'>
-          <div className='kb-detail-card kb-source-profile'>
-            <h3>来源概览</h3>
-            {source_detail ? (
-              <>
-                <strong>{source_detail.source.name}</strong>
+        <div className='kb-source-main'>
+          <div className='kb-detail-card kb-source-stage'>
+            <div className='kb-source-hero'>
+              <span className='kb-context-label'>Selected Source</span>
+              <h3>{active_source?.name ?? '选择一个来源'}</h3>
+              <p>{active_source_summary}</p>
+              {source_detail ? (
                 <div className='kb-meta-strip'>
                   <span className='kb-meta-pill'>{`段落 ${source_detail.paragraph_count}`}</span>
                   <span className='kb-meta-pill'>{`实体 ${source_detail.entity_count}`}</span>
                   <span className='kb-meta-pill'>{`关系 ${source_detail.relation_count}`}</span>
                   <span className='kb-meta-pill'>{get_strategy_label(source_detail.source.strategy)}</span>
+                  <span className='kb-meta-pill'>{get_status_label(source_detail.source.status)}</span>
                 </div>
-                <p>{source_detail.source.summary || '该来源暂时没有摘要'}</p>
-                <pre>{JSON.stringify(source_detail.source.metadata, null, 2)}</pre>
-              </>
-            ) : (
-              <span>选择一个来源以查看元数据和段落统计</span>
-            )}
+              ) : null}
+            </div>
+
+            {metadata_text ? <pre>{metadata_text}</pre> : <span className='kb-helper-text'>当前来源没有额外元数据可展示。</span>}
           </div>
 
-          <div className='kb-detail-card'>
+          <div className='kb-detail-card kb-source-reading'>
             <div className='kb-section-header'>
               <div>
+                <span className='kb-context-label'>Reading</span>
                 <h3>段落阅读</h3>
-                <p>在当前来源内搜索段落 并回到图谱上下文继续查看</p>
+                <p>只在当前来源内检索段落，命中后可以一键回到图谱中的对应位置。</p>
               </div>
             </div>
 
@@ -149,6 +162,11 @@ export function SourceBrowserPanel() {
                 value={paragraph_keyword}
               />
             </label>
+
+            <div className='kb-meta-strip'>
+              <span className='kb-meta-pill'>{`命中段落 ${filtered_paragraphs.length}`}</span>
+              <span className='kb-meta-pill'>{`当前来源 ${active_source?.name ?? '--'}`}</span>
+            </div>
 
             <div className='kb-paragraph-list' ref={paragraph_scroll_ref}>
               {filtered_paragraphs.length ? (
@@ -193,7 +211,7 @@ export function SourceBrowserPanel() {
                   })}
                 </div>
               ) : (
-                <span>当前来源下没有匹配段落</span>
+                <div className='kb-empty-card'>当前来源下没有匹配的段落。</div>
               )}
             </div>
           </div>

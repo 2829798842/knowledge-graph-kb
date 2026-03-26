@@ -1,54 +1,56 @@
 :root {
-  font-family: 'Microsoft YaHei UI', 'PingFang SC', 'Noto Sans SC', 'Segoe UI Variable Display', sans-serif;
+  font-family: 'Soehne', 'PingFang SC', 'Microsoft YaHei UI', 'Segoe UI Variable Text', sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  --bg-base: #efe6d4;
-  --bg-overlay-top: rgba(231, 187, 100, 0.28);
-  --bg-overlay-right: rgba(44, 117, 110, 0.2);
-  --text-primary: #142631;
-  --text-secondary: #5c6672;
-  --hero-surface: rgba(255, 250, 244, 0.76);
-  --hero-border: rgba(92, 112, 104, 0.16);
-  --panel-surface: rgba(255, 251, 246, 0.8);
-  --panel-border: rgba(96, 97, 85, 0.1);
-  --panel-shadow: rgba(53, 45, 28, 0.1);
-  --field-surface: rgba(255, 255, 255, 0.82);
-  --field-border: rgba(82, 97, 109, 0.18);
-  --card-surface: rgba(255, 255, 255, 0.86);
-  --card-border: rgba(89, 90, 79, 0.12);
-  --accent-primary: #173f56;
-  --accent-secondary: #1d8678;
-  --accent-ghost-bg: rgba(23, 63, 86, 0.08);
-  --accent-ghost-text: #174a67;
-  --graph-surface:
-    radial-gradient(circle at top left, rgba(245, 210, 148, 0.46), transparent 25%),
-    linear-gradient(180deg, rgba(254, 250, 244, 0.95), rgba(243, 236, 226, 0.95));
-  --graph-border: rgba(120, 116, 95, 0.14);
+  --bg-base: #f7f7f8;
+  --sidebar-surface: #ececf1;
+  --panel-surface: #ffffff;
+  --panel-border: rgba(17, 24, 39, 0.08);
+  --panel-shadow: 0 8px 30px rgba(15, 23, 42, 0.05);
+  --field-surface: #ffffff;
+  --field-border: rgba(17, 24, 39, 0.12);
+  --card-surface: #ffffff;
+  --card-border: rgba(17, 24, 39, 0.1);
+  --text-primary: #171717;
+  --text-secondary: #6b7280;
+  --text-muted: #6b7280;
+  --muted-text: #6b7280;
+  --accent-primary: #111827;
+  --accent-primary-contrast: #ffffff;
+  --accent-secondary: #374151;
+  --accent-ghost-bg: #f3f4f6;
+  --accent-ghost-text: #111827;
+  --danger-text: #b42318;
+  --graph-surface: linear-gradient(180deg, #ffffff, #f8fafc);
+  --graph-border: rgba(17, 24, 39, 0.08);
+  --hero-surface: #ffffff;
+  --hero-border: rgba(17, 24, 39, 0.08);
 }
 
 :root[data-theme='dark'] {
-  --bg-base: #0f1720;
-  --bg-overlay-top: rgba(42, 112, 108, 0.24);
-  --bg-overlay-right: rgba(145, 112, 54, 0.18);
-  --text-primary: #e8f1ef;
-  --text-secondary: #a8b7c1;
-  --hero-surface: rgba(18, 28, 37, 0.86);
-  --hero-border: rgba(96, 136, 146, 0.18);
-  --panel-surface: rgba(17, 26, 35, 0.88);
-  --panel-border: rgba(104, 118, 130, 0.14);
-  --panel-shadow: rgba(0, 0, 0, 0.32);
-  --field-surface: rgba(24, 36, 47, 0.88);
-  --field-border: rgba(103, 128, 140, 0.28);
-  --card-surface: rgba(23, 34, 45, 0.9);
-  --card-border: rgba(103, 128, 140, 0.18);
-  --accent-primary: #1d9187;
-  --accent-secondary: #36b4a7;
-  --accent-ghost-bg: rgba(75, 124, 167, 0.16);
-  --accent-ghost-text: #b6d4ea;
-  --graph-surface:
-    radial-gradient(circle at top left, rgba(43, 85, 83, 0.5), transparent 25%),
-    linear-gradient(180deg, rgba(16, 25, 34, 0.98), rgba(18, 29, 39, 0.98));
-  --graph-border: rgba(103, 128, 140, 0.22);
+  --bg-base: #202123;
+  --sidebar-surface: #171717;
+  --panel-surface: #212121;
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --panel-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  --field-surface: #2b2b2b;
+  --field-border: rgba(255, 255, 255, 0.12);
+  --card-surface: #2a2b32;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --text-primary: #ececf1;
+  --text-secondary: #a1a1aa;
+  --text-muted: #a1a1aa;
+  --muted-text: #a1a1aa;
+  --accent-primary: #ececf1;
+  --accent-primary-contrast: #111827;
+  --accent-secondary: #d4d4d8;
+  --accent-ghost-bg: #343541;
+  --accent-ghost-text: #ececf1;
+  --danger-text: #f97066;
+  --graph-surface: linear-gradient(180deg, #212121, #1c1c1c);
+  --graph-border: rgba(255, 255, 255, 0.08);
+  --hero-surface: #212121;
+  --hero-border: rgba(255, 255, 255, 0.08);
 }
 
 * {
@@ -68,27 +70,11 @@ body {
   min-height: 100dvh;
   overflow: hidden;
   color: var(--text-primary);
-  background:
-    radial-gradient(circle at top left, var(--bg-overlay-top), transparent 26%),
-    radial-gradient(circle at top right, var(--bg-overlay-right), transparent 28%),
-    linear-gradient(180deg, color-mix(in srgb, var(--bg-base) 74%, white), var(--bg-base));
+  background: var(--bg-base);
   transition:
     color 180ms ease,
-    background 220ms ease;
+    background-color 180ms ease;
   overscroll-behavior: none;
-}
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(circle at center, black 24%, transparent 82%);
-  opacity: 0.28;
 }
 
 button,
@@ -100,16 +86,6 @@ textarea {
 
 button {
   cursor: pointer;
-  transition:
-    transform 160ms ease,
-    opacity 160ms ease,
-    background-color 160ms ease,
-    box-shadow 160ms ease,
-    border-color 160ms ease;
-}
-
-button:hover:not(:disabled) {
-  transform: translateY(-1px);
 }
 
 button:disabled {

@@ -42,7 +42,7 @@ describe('App', () => {
   it('renders the knowledge-base workspace and requests the core APIs', async () => {
     render(<App />);
 
-    expect(screen.getByText('\u77e5\u8bc6\u5e93\u5de5\u4f5c\u53f0')).toBeTruthy();
+    expect(screen.getByText('\u77e5\u8bc6\u56fe\u8c31\u5de5\u4f5c\u53f0')).toBeTruthy();
     expect(screen.getAllByText('\u5bfc\u5165\u4e2d\u5fc3').length).toBeGreaterThan(0);
 
     await waitFor(() => {

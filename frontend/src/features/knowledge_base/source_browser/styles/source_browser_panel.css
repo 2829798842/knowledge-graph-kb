@@ -2,15 +2,62 @@
  * Source-browser panel styles.
  */
 
-.kb-panel-split-source {
-  grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+.kb-source-shell {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  gap: 14px;
   min-height: 0;
   height: 100%;
   overflow: hidden;
 }
 
-.kb-source-sidebar {
+.kb-source-rail,
+.kb-source-main {
+  min-height: 0;
+}
+
+.kb-source-rail {
+  display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.kb-source-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+}
+
+.kb-source-stage,
+.kb-source-reading {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+}
+
+.kb-source-hero {
+  display: grid;
+  gap: 8px;
+  padding: 18px 20px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-primary) 11%, transparent), transparent 36%),
+    linear-gradient(180deg, color-mix(in srgb, var(--panel-surface) 98%, transparent), color-mix(in srgb, var(--accent-ghost-bg) 66%, transparent));
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 14%, transparent);
+}
+
+.kb-source-hero h3,
+.kb-source-reading h3 {
+  margin: 0;
+}
+
+.kb-source-hero p,
+.kb-source-reading p {
+  margin: 0;
+  color: var(--text-secondary);
 }
 
 .kb-source-list,
@@ -23,28 +70,21 @@
   padding-right: 4px;
 }
 
-.kb-source-detail {
-  grid-template-rows: minmax(220px, auto) minmax(0, 1fr);
-}
-
-.kb-source-profile {
-  min-height: 0;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.kb-source-detail .kb-detail-card:last-child {
-  min-height: 0;
-  overflow: hidden;
-  grid-template-rows: auto auto minmax(0, 1fr);
+.kb-paragraph-list {
+  border-top: 1px solid color-mix(in srgb, var(--panel-border) 90%, transparent);
+  padding-top: 14px;
 }
 
 .kb-virtual-list-item {
   padding-bottom: 14px;
 }
 
-@media (max-width: 1200px) {
-  .kb-panel-split-source {
+@media (max-width: 1280px) {
+  .kb-source-shell {
     grid-template-columns: 1fr;
+  }
+
+  .kb-source-main {
+    grid-template-rows: auto auto;
   }
 }

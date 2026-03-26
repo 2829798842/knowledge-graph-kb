@@ -1,65 +1,43 @@
 /**
- * Workspace overview cards and quick actions.
+ * Sidebar navigation and quick context.
  */
 
-import type { ReactNode } from 'react';
-
-import { QUERY_MODE_LABELS, WORKSPACE_LABELS } from '../config/ui_constants';
+import type { ThemeMode } from '../../../../theme';
+import { THEME_MODE_OPTIONS, WORKSPACE_TABS } from '../config/ui_constants';
 import { use_workspace_shell } from '../hooks/use_workspace_shell';
 
-interface WorkspaceOverviewCardProps {
-  heading: string;
-  value: string | number;
-  note: string;
-  children?: ReactNode;
-}
+function SidebarMetric(props: { label: string; value: string | number; note: string }) {
+  const { label, value, note } = props;
 
-function WorkspaceSummaryCard(props: WorkspaceOverviewCardProps) {
-  const { heading, value, note, children } = props;
   return (
     <article className='kb-signal-card'>
-      <span className='kb-signal-label'>{heading}</span>
+      <span className='kb-signal-label'>{label}</span>
       <strong className='kb-signal-value'>{value}</strong>
-      <p className='kb-overview-note'>{note}</p>
-      {children}
+      <span className='kb-helper-text'>{note}</span>
     </article>
   );
 }
 
-function ActionCard(props: {
-  heading: string;
-  value: string;
-  note: string;
-  children: React.ReactNode;
-}) {
-  const { heading, value, note, children } = props;
-  return (
-    <article className='kb-context-card'>
-      <span className='kb-context-label'>{heading}</span>
-      <strong>{value}</strong>
-      <p>{note}</p>
-      <div className='kb-context-actions'>{children}</div>
-    </article>
-  );
+interface WorkspaceOverviewProps {
+  theme_mode: ThemeMode;
+  set_theme_mode: (theme_mode: ThemeMode) => void;
 }
 
-export function WorkspaceOverview() {
+export function WorkspaceOverview(props: WorkspaceOverviewProps) {
+  const { theme_mode, set_theme_mode } = props;
   const {
     active_workspace,
-    query_mode,
+    set_active_workspace,
     active_task_count,
     task_count,
     ready_source_count,
     document_count,
     node_count,
     edge_count,
-    highlight_node_count,
-    highlight_edge_count,
     focus_summary,
     selected_source_summary,
     source_density,
     include_paragraphs,
-    set_active_workspace,
     clear_source_filters,
     reset_graph_filters,
     clear_highlights,
@@ -69,88 +47,85 @@ export function WorkspaceOverview() {
 
   return (
     <aside className='kb-overview-panel'>
-      <div className='kb-overview-heading'>
-        <span className='kb-context-label'>工作台概览</span>
-        <h2>左侧总览</h2>
-        <p>把状态、筛选和快捷操作固定在侧栏里，主区域只专注当前页面，切换时不会再把内容都堆在一起。</p>
+      <div className='kb-sidebar-brand'>
+        <span className='kb-context-label'>Knowledge Graph KB</span>
+        <strong>知识图谱工作台</strong>
+        <p>像 ChatGPT 一样把导航固定在左侧，把当前任务留在右边，让操作路径更短、界面更安静。</p>
       </div>
 
-      <div className='kb-overview-scroll'>
-        <section className='kb-signal-strip'>
-          <WorkspaceSummaryCard
-            heading='当前页面'
-            note={`当前检索模式：${QUERY_MODE_LABELS[query_mode]}`}
-            value={WORKSPACE_LABELS[active_workspace]}
-          />
+      <nav aria-label='工作区导航' className='kb-sidebar-nav'>
+        {WORKSPACE_TABS.map((tab) => {
+          const is_active = tab.id === active_workspace;
 
-          <WorkspaceSummaryCard
-            heading='来源就绪度'
-            note='已就绪来源可用于图谱构建和内容检索。'
-            value={`${ready_source_count}/${document_count}`}
-          />
+          return (
+            <button
+              className={`kb-sidebar-link ${is_active ? 'is-active' : ''}`}
+              key={tab.id}
+              onClick={() => set_active_workspace(tab.id)}
+              type='button'
+            >
+              <strong>{tab.label}</strong>
+              <span>{tab.description}</span>
+            </button>
+          );
+        })}
+      </nav>
 
-          <WorkspaceSummaryCard
-            heading='图谱规模'
-            note={include_paragraphs ? '当前包含段落节点。' : '当前仅显示来源、实体与关系。'}
-            value={`${node_count} 节点 / ${edge_count} 关系`}
-          />
+      <section className='kb-sidebar-section'>
+        <span className='kb-context-label'>工作区状态</span>
+        <div className='kb-sidebar-stats'>
+          <SidebarMetric label='可用来源' note='可用于检索和图谱' value={`${ready_source_count}/${document_count}`} />
+          <SidebarMetric label='活跃任务' note='运行中或排队中' value={active_task_count} />
+          <SidebarMetric label='图谱规模' note='节点 / 关系' value={`${node_count} / ${edge_count}`} />
+        </div>
+      </section>
 
-          <WorkspaceSummaryCard
-            heading='当前焦点'
-            note={`高亮节点 ${highlight_node_count} 个，高亮关系 ${highlight_edge_count} 条。`}
-            value={focus_summary}
-          />
-        </section>
+      <section className='kb-sidebar-section'>
+        <span className='kb-context-label'>当前上下文</span>
+        <div className='kb-context-card'>
+          <strong>{focus_summary}</strong>
+          <span>{`来源筛选：${selected_source_summary}`}</span>
+          <span>{`图谱密度 ${source_density}% ｜ ${include_paragraphs ? '显示段落节点' : '隐藏段落节点'}`}</span>
+          <span>{`任务总数 ${task_count}`}</span>
+        </div>
+      </section>
 
-        <section className='kb-context-grid'>
-          <ActionCard
-            heading='快捷切换'
-            note='在不同工作流之间快速切换。'
-            value={active_task_count > 0 ? `${active_task_count} 个活跃任务` : '当前没有活跃任务'}
-          >
-            <button className='kb-secondary-button' onClick={() => set_active_workspace('import')} type='button'>
-              打开导入
-            </button>
-            <button className='kb-secondary-button' onClick={() => set_active_workspace('config')} type='button'>
-              打开模型配置
-            </button>
-            <button className='kb-secondary-button' onClick={() => set_active_workspace('query')} type='button'>
-              打开检索
-            </button>
-            <button className='kb-secondary-button' onClick={() => set_active_workspace('graph')} type='button'>
-              打开图谱
-            </button>
-            <button className='kb-secondary-button' onClick={() => set_active_workspace('source')} type='button'>
-              打开来源
-            </button>
-          </ActionCard>
+      <section className='kb-sidebar-section'>
+        <span className='kb-context-label'>快捷操作</span>
+        <div className='kb-sidebar-actions'>
+          <button className='kb-secondary-button' onClick={clear_source_filters} type='button'>
+            清空来源筛选
+          </button>
+          <button className='kb-secondary-button' onClick={reset_graph_filters} type='button'>
+            重置图谱过滤
+          </button>
+          <button className='kb-secondary-button' onClick={clear_highlights} type='button'>
+            清空高亮
+          </button>
+          <button className='kb-secondary-button' onClick={clear_graph_selection} type='button'>
+            清空选择
+          </button>
+          <button className='kb-secondary-button' onClick={() => void refresh_graph()} type='button'>
+            刷新图谱
+          </button>
+        </div>
+      </section>
 
-          <ActionCard
-            heading='来源与过滤'
-            note={`图谱密度 ${source_density}%；${include_paragraphs ? '已显示' : '未显示'}段落节点。`}
-            value={selected_source_summary}
-          >
-            <button className='kb-secondary-button' onClick={clear_source_filters} type='button'>
-              清空来源筛选
+      <section className='kb-sidebar-section kb-sidebar-footer'>
+        <span className='kb-context-label'>显示设置</span>
+        <div className='kb-theme-switcher'>
+          {THEME_MODE_OPTIONS.map((option) => (
+            <button
+              className={`kb-pill-button ${theme_mode === option.id ? 'is-active' : ''}`}
+              key={option.id}
+              onClick={() => set_theme_mode(option.id)}
+              type='button'
+            >
+              {option.label}
             </button>
-            <button className='kb-secondary-button' onClick={reset_graph_filters} type='button'>
-              重置图谱过滤
-            </button>
-          </ActionCard>
-
-          <ActionCard heading='交互控制' note={`任务队列总数：${task_count}`} value={focus_summary}>
-            <button className='kb-secondary-button' onClick={clear_highlights} type='button'>
-              清空高亮
-            </button>
-            <button className='kb-secondary-button' onClick={clear_graph_selection} type='button'>
-              清空选择
-            </button>
-            <button className='kb-secondary-button' onClick={() => void refresh_graph()} type='button'>
-              刷新图谱
-            </button>
-          </ActionCard>
-        </section>
-      </div>
+          ))}
+        </div>
+      </section>
     </aside>
   );
 }

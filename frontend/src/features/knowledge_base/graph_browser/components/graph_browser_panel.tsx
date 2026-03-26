@@ -1,5 +1,5 @@
 /**
- * 图谱浏览面板。
+ * Graph-browser panel.
  */
 
 import { useDeferredValue, useEffect, useState } from 'react';
@@ -66,6 +66,7 @@ function collect_node_import_rows(node_type: string, metadata: Record<string, un
   const strategy = format_metadata_value(
     merged.detected_strategy || merged.strategy || merged.source_strategy || merged.import_strategy,
   );
+
   if (file_type) {
     rows.push(['文件类型', file_type]);
   }
@@ -86,6 +87,7 @@ function collect_node_import_rows(node_type: string, metadata: Record<string, un
     const knowledge_type = format_metadata_value(merged.knowledge_type);
     const worksheet_name = format_metadata_value(merged.worksheet_name);
     const is_spreadsheet = format_metadata_value(merged.is_spreadsheet).toLowerCase() === 'true';
+
     if (is_spreadsheet) {
       rows.push(['表格来源', '是']);
     }
@@ -133,13 +135,34 @@ function selected_source_summary(selected_source_ids: string[], sources: SourceR
   if (!selected_source_ids.length) {
     return '全部来源';
   }
+
   const selected_names = sources
     .filter((source) => selected_source_ids.includes(source.id))
     .map((source) => source.name);
+
   if (selected_names.length <= 3) {
     return selected_names.join('、');
   }
-  return `${selected_names.slice(0, 3).join('、')} 等 ${selected_names.length} 个`;
+  return `${selected_names.slice(0, 3).join('、')} 等 ${selected_names.length} 个来源`;
+}
+
+function MetadataRows(props: { rows: [string, string][] }) {
+  const { rows } = props;
+
+  if (!rows.length) {
+    return null;
+  }
+
+  return (
+    <div className='kb-graph-metadata-list'>
+      {rows.map(([label, value]) => (
+        <div className='kb-graph-metadata-row' key={`${label}-${value}`}>
+          <span>{label}</span>
+          <strong>{value}</strong>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
@@ -176,6 +199,7 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
   const [object_node_id, set_object_node_id] = useState<string>('');
   const [weight, set_weight] = useState<number>(1);
   const deferred_source_filter: string = useDeferredValue(source_filter_text.trim().toLowerCase());
+
   const node_import_rows: [string, string][] = node_detail
     ? collect_node_import_rows(node_detail.node.type, node_detail.node.metadata)
     : [];
@@ -188,10 +212,15 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
     const haystack: string = `${source.name} ${source.summary ?? ''} ${source.source_kind}`.toLowerCase();
     return haystack.includes(deferred_source_filter);
   });
+
   const relation_node_options = [...graph.nodes].sort((left_node, right_node) =>
     left_node.label.localeCompare(right_node.label, 'zh-CN'),
   );
   const predicate_template_value: string = PREDICATE_SUGGESTIONS.includes(predicate) ? predicate : '__custom__';
+  const focus_label =
+    node_detail?.node.label ??
+    edge_detail?.edge.label ??
+    (selected_source_ids.length ? selected_source_summary(selected_source_ids, sources) : '全部来源');
 
   useEffect(() => {
     if (!selected_node_id) {
@@ -220,14 +249,15 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
       <header className='kb-section-header'>
         <div>
           <h2>图谱浏览</h2>
-          <p>图谱页已经改成宽屏优先布局，优先把空间留给 Cytoscape 画布，筛选和详情放到两侧控制区。</p>
+          <p>把图谱页收成三栏工作区，左边控制范围，中间专注看图，右边查看详情和维护手动关系。</p>
         </div>
       </header>
 
-      <div className='kb-panel-split kb-panel-split-graph'>
-        <aside className='kb-sidebar kb-graph-sidebar'>
-          <div className='kb-filter-card'>
-            <h3>图谱过滤</h3>
+      <div className='kb-graph-shell'>
+        <aside className='kb-graph-rail'>
+          <div className='kb-detail-card'>
+            <span className='kb-context-label'>Graph Filters</span>
+            <h3>显示范围</h3>
             <p>{`当前来源：${selected_source_summary(selected_source_ids, sources)}`}</p>
 
             <label className='kb-form-field'>
@@ -260,6 +290,17 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
               <span className='kb-helper-text'>按住 Ctrl 或 Command 可以多选；不选时默认显示全部来源。</span>
             </label>
 
+            <div className='kb-meta-strip'>
+              <span className='kb-meta-pill'>{`来源 ${sources.length}`}</span>
+              <span className='kb-meta-pill'>{`匹配 ${filtered_sources.length}`}</span>
+              <span className='kb-meta-pill'>{selected_source_ids.length ? `已选 ${selected_source_ids.length}` : '显示全部'}</span>
+            </div>
+          </div>
+
+          <div className='kb-detail-card'>
+            <span className='kb-context-label'>Graph Controls</span>
+            <h3>图谱控制</h3>
+
             <label className='kb-form-field'>
               <span>图谱密度</span>
               <input
@@ -288,12 +329,16 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
               <button className='kb-secondary-button' onClick={clear_highlights} type='button'>
                 清空高亮
               </button>
+              <button className='kb-secondary-button' onClick={clear_graph_selection} type='button'>
+                清空选择
+              </button>
             </div>
           </div>
 
-          <div className='kb-filter-card'>
-            <h3>手动关系</h3>
-            <p>通过下拉选择节点和常用关系，为图谱补充人工关系。</p>
+          <div className='kb-detail-card'>
+            <span className='kb-context-label'>Manual Relation</span>
+            <h3>创建手动关系</h3>
+            <p>用当前选中的节点快速补充图谱里的人工关系。</p>
 
             <label className='kb-form-field'>
               <span>起点节点</span>
@@ -348,7 +393,10 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
               <input
                 max={5}
                 min={0.1}
-                onChange={(event) => set_weight(Number(event.target.value))}
+                onChange={(event) => {
+                  const next_weight = Number(event.target.value);
+                  set_weight(Number.isFinite(next_weight) ? next_weight : 1);
+                }}
                 step={0.1}
                 type='number'
                 value={weight}
@@ -366,7 +414,7 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
                 }}
                 type='button'
               >
-                将当前节点设为起点
+                当前节点设为起点
               </button>
               <button
                 className='kb-secondary-button'
@@ -378,7 +426,7 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
                 }}
                 type='button'
               >
-                将当前节点设为终点
+                当前节点设为终点
               </button>
             </div>
 
@@ -400,45 +448,62 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
         </aside>
 
         <div className='kb-graph-main'>
-          <div className='kb-meta-strip'>
-            <span className='kb-meta-pill'>{`节点 ${graph.nodes.length}`}</span>
-            <span className='kb-meta-pill'>{`关系 ${graph.edges.length}`}</span>
-            <span className='kb-meta-pill'>{selected_source_ids.length ? `已筛选 ${selected_source_ids.length} 个来源` : '显示全部来源'}</span>
-            <span className='kb-meta-pill'>{is_graph_loading ? '图谱刷新中...' : '图谱已就绪'}</span>
-          </div>
+          <div className='kb-detail-card kb-graph-stage'>
+            <div className='kb-graph-hero'>
+              <span className='kb-context-label'>Graph View</span>
+              <h3>{focus_label}</h3>
+              <p>中间保留给图本身。筛选、选择、高亮和手动关系都围绕这块画布展开。</p>
 
-          <KnowledgeGraphCanvas
-            edges={graph.edges}
-            highlighted_edge_ids={highlighted_edge_ids}
-            highlighted_node_ids={highlighted_node_ids}
-            nodes={graph.nodes}
-            on_clear_selection={clear_graph_selection}
-            on_select_edge={select_edge}
-            on_select_node={select_node}
-            resolved_theme={resolved_theme}
-            selected_edge_id={selected_edge_id}
-            selected_node_id={selected_node_id}
-          />
+              <div className='kb-meta-strip'>
+                <span className='kb-meta-pill'>{`节点 ${graph.nodes.length}`}</span>
+                <span className='kb-meta-pill'>{`关系 ${graph.edges.length}`}</span>
+                <span className='kb-meta-pill'>{`高亮节点 ${highlighted_node_ids.length}`}</span>
+                <span className='kb-meta-pill'>{`高亮关系 ${highlighted_edge_ids.length}`}</span>
+                <span className='kb-meta-pill'>{is_graph_loading ? '图谱刷新中...' : '图谱已就绪'}</span>
+              </div>
+            </div>
 
-          <div className='kb-legend-row'>
-            <span className='kb-legend-item'>来源节点</span>
-            <span className='kb-legend-item'>段落节点</span>
-            <span className='kb-legend-item'>实体节点</span>
-            <span className='kb-legend-item'>关系连线</span>
+            <KnowledgeGraphCanvas
+              edges={graph.edges}
+              highlighted_edge_ids={highlighted_edge_ids}
+              highlighted_node_ids={highlighted_node_ids}
+              nodes={graph.nodes}
+              on_clear_selection={clear_graph_selection}
+              on_select_edge={select_edge}
+              on_select_node={select_node}
+              resolved_theme={resolved_theme}
+              selected_edge_id={selected_edge_id}
+              selected_node_id={selected_node_id}
+            />
+
+            <div className='kb-legend-row'>
+              <span className='kb-legend-item'>来源节点</span>
+              <span className='kb-legend-item'>段落节点</span>
+              <span className='kb-legend-item'>实体节点</span>
+              <span className='kb-legend-item'>关系连线</span>
+            </div>
           </div>
         </div>
 
-        <aside className='kb-detail-panel kb-graph-details'>
+        <aside className='kb-graph-detail-rail'>
           <div className='kb-detail-card'>
-            <h3>当前详情</h3>
+            <span className='kb-context-label'>Selection</span>
+            <h3>{node_detail?.node.label ?? edge_detail?.edge.label ?? '当前详情'}</h3>
+            <p>
+              {node_detail
+                ? NODE_TYPE_LABELS[node_detail.node.type] ?? node_detail.node.type
+                : edge_detail
+                  ? edge_detail.edge.type
+                  : '点击图谱中的节点或关系后，这里会显示详情。'}
+            </p>
+
             {node_detail ? (
               <>
-                <strong>{node_detail.node.label}</strong>
-                <span>{NODE_TYPE_LABELS[node_detail.node.type] ?? node_detail.node.type}</span>
                 <div className='kb-meta-strip'>
                   <span className='kb-meta-pill'>{`段落 ${node_detail.paragraphs.length}`}</span>
                   <span className='kb-meta-pill'>{`关系 ${node_detail.relations.length}`}</span>
                 </div>
+
                 <div className='kb-button-row'>
                   <button className='kb-secondary-button' onClick={() => set_subject_node_id(node_detail.node.id)} type='button'>
                     设为起点
@@ -447,41 +512,36 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
                     设为终点
                   </button>
                 </div>
-                {node_import_rows.length ? (
-                  <div className='kb-meta-strip'>
-                    {node_import_rows.map(([item_key, item_value]) => (
-                      <span className='kb-helper-text' key={`${item_key}-${item_value}`}>
-                        {`${item_key}：${item_value}`}
-                      </span>
-                    ))}
-                  </div>
+
+                <MetadataRows rows={node_import_rows} />
+
+                {Object.keys(node_detail.node.metadata).length ? (
+                  <pre>{JSON.stringify(node_detail.node.metadata, null, 2)}</pre>
                 ) : null}
-                <pre>{JSON.stringify(node_detail.node.metadata, null, 2)}</pre>
               </>
             ) : null}
 
             {edge_detail ? (
               <>
-                <strong>{edge_detail.edge.label}</strong>
-                <span>{edge_detail.edge.type}</span>
-                {edge_import_rows.length ? (
-                  <div className='kb-meta-strip'>
-                    {edge_import_rows.map(([item_key, item_value]) => (
-                      <span className='kb-helper-text' key={`${item_key}-${item_value}`}>
-                        {`${item_key}：${item_value}`}
-                      </span>
-                    ))}
-                  </div>
+                <MetadataRows rows={edge_import_rows} />
+                {Object.keys(edge_detail.edge.metadata).length ? (
+                  <pre>{JSON.stringify(edge_detail.edge.metadata, null, 2)}</pre>
                 ) : null}
-                <pre>{JSON.stringify(edge_detail.edge.metadata, null, 2)}</pre>
               </>
             ) : null}
 
-            {!node_detail && !edge_detail ? <span>点击图谱中的节点或连线后，这里会显示详情。</span> : null}
+            {!node_detail && !edge_detail ? <div className='kb-empty-card'>还没有选中对象。</div> : null}
           </div>
 
           <div className='kb-detail-card'>
-            <h3>手动关系列表</h3>
+            <span className='kb-context-label'>Manual Relations</span>
+            <h3>手动关系</h3>
+            <p>这里展示当前已补充到图谱中的手动关系。</p>
+
+            <div className='kb-meta-strip'>
+              <span className='kb-meta-pill'>{`总数 ${manual_relations.length}`}</span>
+            </div>
+
             <div className='kb-relation-list'>
               {manual_relations.map((relation) => (
                 <div className='kb-inline-card' key={relation.id}>
@@ -493,7 +553,7 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
                   </button>
                 </div>
               ))}
-              {!manual_relations.length ? <span>当前还没有手动关系。</span> : null}
+              {!manual_relations.length ? <div className='kb-empty-card'>当前还没有手动关系。</div> : null}
             </div>
           </div>
         </aside>
