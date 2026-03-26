@@ -3,6 +3,7 @@
 from typing import Any
 
 from src.config import Settings
+from src.kb.providers import OpenAiConfigurationError, OpenAiRequestError
 from src.kb.storage import ConversationStore
 from src.utils.logger import get_logger
 
@@ -79,6 +80,14 @@ class ConversationService:
             content=normalized_content,
             turn_index=turn_index,
         )
+        self._update_session_after_user_message(
+            session=session,
+            session_id=session_id,
+            content=normalized_content,
+            existing_messages=existing_messages,
+            source_ids=source_ids,
+            worksheet_names=worksheet_names,
+        )
 
         recent_history = self._history_context(existing_messages)
         logger.debug(
@@ -88,13 +97,21 @@ class ConversationService:
             len(existing_messages),
             len(recent_history),
         )
-        answer_payload = self.answer_service.answer(
-            query=normalized_content,
-            source_ids=source_ids,
-            worksheet_names=worksheet_names,
-            top_k=top_k or self.settings.query_context_chunks,
-            conversation_history=recent_history,
-        )
+        try:
+            answer_payload = self.answer_service.answer(
+                query=normalized_content,
+                source_ids=source_ids,
+                worksheet_names=worksheet_names,
+                top_k=top_k or self.settings.query_context_chunks,
+                conversation_history=recent_history,
+            )
+        except Exception as exc:
+            self._persist_failed_assistant_message(
+                session_id=session_id,
+                turn_index=turn_index,
+                exc=exc,
+            )
+            raise
         self.store.create_message(
             session_id=session_id,
             role="assistant",
@@ -106,26 +123,6 @@ class ConversationService:
             highlighted_node_ids=list(answer_payload.get("highlighted_node_ids") or []),
             highlighted_edge_ids=list(answer_payload.get("highlighted_edge_ids") or []),
         )
-
-        if not existing_messages and str(session.get("title") or "").strip() == self.DEFAULT_SESSION_TITLE:
-            self.store.update_session(
-                session_id,
-                title=self._title_from_content(normalized_content),
-                metadata={
-                    **dict(session.get("metadata", {})),
-                    "source_ids": list(source_ids or []),
-                    "worksheet_names": list(worksheet_names or []),
-                },
-            )
-        elif source_ids is not None or worksheet_names is not None:
-            self.store.update_session(
-                session_id,
-                metadata={
-                    **dict(session.get("metadata", {})),
-                    "source_ids": list(source_ids or []),
-                    "worksheet_names": list(worksheet_names or []),
-                },
-            )
         refreshed_session = self.store.get_session(session_id)
         if refreshed_session is None:
             raise ValueError("Chat session could not be reloaded after message persistence.")
@@ -162,6 +159,76 @@ class ConversationService:
             citation_count,
         )
         return {**hydrated_session, "messages": hydrated_messages}
+
+    def _update_session_after_user_message(
+        self,
+        *,
+        session: dict[str, Any],
+        session_id: str,
+        content: str,
+        existing_messages: list[dict[str, Any]],
+        source_ids: list[str] | None,
+        worksheet_names: list[str] | None,
+    ) -> None:
+        should_update_title = not existing_messages and str(session.get("title") or "").strip() == self.DEFAULT_SESSION_TITLE
+        should_update_metadata = source_ids is not None or worksheet_names is not None
+        if not should_update_title and not should_update_metadata:
+            return
+
+        update_payload: dict[str, Any] = {}
+        if should_update_title:
+            update_payload["title"] = self._title_from_content(content)
+        if should_update_metadata:
+            next_metadata = dict(session.get("metadata", {}))
+            if source_ids is not None:
+                next_metadata["source_ids"] = list(source_ids)
+            if worksheet_names is not None:
+                next_metadata["worksheet_names"] = list(worksheet_names)
+            update_payload["metadata"] = next_metadata
+        self.store.update_session(session_id, **update_payload)
+
+    def _persist_failed_assistant_message(
+        self,
+        *,
+        session_id: str,
+        turn_index: int,
+        exc: Exception,
+    ) -> None:
+        error_message = self._error_message_from_exception(exc)
+        try:
+            self.store.create_message(
+                session_id=session_id,
+                role="assistant",
+                content=error_message,
+                turn_index=turn_index,
+                execution={
+                    "status": "failed",
+                    "retrieval_mode": "none",
+                    "model_invoked": False,
+                    "matched_paragraph_count": 0,
+                    "message": error_message,
+                },
+                error=error_message,
+            )
+            logger.warning(
+                "已为失败的问答请求补写助手错误消息：session_id=%s turn_index=%s error_type=%s",
+                session_id,
+                turn_index,
+                exc.__class__.__name__,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "问答失败后补写助手错误消息时再次失败：session_id=%s turn_index=%s",
+                session_id,
+                turn_index,
+            )
+
+    def _error_message_from_exception(self, exc: Exception) -> str:
+        if isinstance(exc, (OpenAiConfigurationError, OpenAiRequestError, ValueError)):
+            message = str(exc).strip()
+            if message:
+                return message
+        return "系统处理当前消息时失败，请稍后重试。"
 
     def _history_context(self, messages: list[dict[str, Any]]) -> list[dict[str, str]]:
         if not messages:

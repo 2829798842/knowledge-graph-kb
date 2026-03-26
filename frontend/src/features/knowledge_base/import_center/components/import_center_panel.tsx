@@ -14,10 +14,14 @@ import {
   STRATEGY_OPTIONS,
   SUPPORTED_UPLOAD_ACCEPT,
   SUPPORTED_UPLOAD_HINT,
-  TASK_STATUS_ORDER,
 } from '../../shared/config/ui_constants';
-import type { ImportMode, ImportTaskRecord } from '../../shared/types/knowledge_base_types';
+import type { ImportFileRecord, ImportMode, ImportTaskRecord } from '../../shared/types/knowledge_base_types';
 import { use_import_center } from '../hooks/use_import_center';
+import {
+  format_import_task_short_id,
+  format_import_task_timestamp,
+  sort_import_tasks,
+} from '../utils/import_task_order';
 import '../styles/import_center_panel.css';
 
 function resolve_task_mode_label(task: ImportTaskRecord): string {
@@ -41,6 +45,109 @@ function count_problem_files(task: ImportTaskRecord): number {
 
 function count_processed_files(task: ImportTaskRecord): number {
   return task.files.filter((file) => ['completed', 'partial'].includes(file.status)).length;
+}
+
+function resolve_progress_debug(metadata: Record<string, unknown>): string | null {
+  const progress_message = metadata.progress_message;
+  if (typeof progress_message !== 'string') {
+    return null;
+  }
+  const normalized = progress_message.trim();
+  return normalized ? normalized : null;
+}
+
+function format_progress(progress: number): string {
+  const normalized = Math.max(0, Math.min(progress, 100));
+  const rounded = Math.round(normalized * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded.toFixed(0)}%` : `${rounded.toFixed(1)}%`;
+}
+
+function resolve_progress_detail(
+  metadata: Record<string, unknown>,
+): { label: string; current: number | null; total: number | null } | null {
+  const label = typeof metadata.progress_detail_label === 'string' ? metadata.progress_detail_label.trim() : '';
+  const current = typeof metadata.progress_detail_current === 'number' ? metadata.progress_detail_current : null;
+  const total = typeof metadata.progress_detail_total === 'number' ? metadata.progress_detail_total : null;
+  if (!label) {
+    return null;
+  }
+  return { label, current, total };
+}
+
+function render_strategy_summary(task: ImportTaskRecord): string {
+  const requested_label = get_strategy_label(task.strategy);
+  const detected_strategies = [
+    ...new Set(
+      task.files
+        .map((file) => file.strategy)
+        .filter((value) => value),
+    ),
+  ];
+  if (!detected_strategies.length) {
+    return `策略 ${requested_label}`;
+  }
+  if (detected_strategies.length === 1) {
+    const detected_label = get_strategy_label(detected_strategies[0]);
+    if (detected_strategies[0] === task.strategy) {
+      return `策略 ${detected_label}`;
+    }
+    return `策略 请求 ${requested_label} / 实际 ${detected_label}`;
+  }
+  return `策略 请求 ${requested_label} / 实际 多种`;
+}
+
+function render_file_strategy_summary(file: ImportFileRecord): string {
+  const actual_label = get_strategy_label(file.strategy);
+  const retry_payload =
+    typeof file.metadata.retry_payload === 'object' && file.metadata.retry_payload !== null
+      ? (file.metadata.retry_payload as { strategy?: unknown })
+      : null;
+  const requested = typeof retry_payload?.strategy === 'string' ? retry_payload.strategy.trim() : '';
+  if (!requested || requested === file.strategy) {
+    return `策略 ${actual_label}`;
+  }
+  return `策略 请求 ${get_strategy_label(requested)} / 实际 ${actual_label}`;
+}
+
+function render_file_progress_summary(file: ImportFileRecord): string {
+  const progress_detail = resolve_progress_detail(file.metadata);
+  if (
+    file.current_step === 'extracting' &&
+    progress_detail?.label === '抽取窗口' &&
+    progress_detail.current !== null &&
+    progress_detail.total !== null
+  ) {
+    return `${progress_detail.label} ${progress_detail.current}/${progress_detail.total}，已抽取段落 ${file.completed_chunks}/${file.total_chunks}，失败 ${file.failed_chunks}`;
+  }
+  if (
+    progress_detail?.label === '段落分块' &&
+    progress_detail.current !== null &&
+    progress_detail.total !== null &&
+    progress_detail.total > 0 &&
+    file.current_step === 'completed'
+  ) {
+    return `${progress_detail.label} ${progress_detail.current}/${progress_detail.total}，失败 ${file.failed_chunks}`;
+  }
+  return `进度 ${format_progress(file.progress)}，段落分块 ${file.completed_chunks}/${file.total_chunks}，失败 ${file.failed_chunks}`;
+}
+
+function render_task_chunk_summary(task: ImportTaskRecord): string {
+  const extracting_file = task.files.find((file) => {
+    const progress_detail = resolve_progress_detail(file.metadata);
+    return (
+      file.current_step === 'extracting' &&
+      progress_detail?.label === '抽取窗口' &&
+      progress_detail.current !== null &&
+      progress_detail.total !== null
+    );
+  });
+  if (extracting_file) {
+    const progress_detail = resolve_progress_detail(extracting_file.metadata);
+    if (progress_detail && progress_detail.current !== null && progress_detail.total !== null) {
+      return `${progress_detail.label} ${progress_detail.current}/${progress_detail.total}，已抽取段落 ${task.completed_chunks}/${task.total_chunks}`;
+    }
+  }
+  return `段落分块 ${task.completed_chunks}/${task.total_chunks}`;
 }
 
 export function ImportCenterPanel() {
@@ -67,11 +174,7 @@ export function ImportCenterPanel() {
     '{\n  "paragraphs": [],\n  "entities": [],\n  "relations": []\n}',
   );
 
-  const ordered_tasks = [...tasks].sort((left_task, right_task) => {
-    const left_rank: number = TASK_STATUS_ORDER[left_task.status] ?? 99;
-    const right_rank: number = TASK_STATUS_ORDER[right_task.status] ?? 99;
-    return left_rank - right_rank;
-  });
+  const ordered_tasks = sort_import_tasks(tasks);
   const active_task_count: number = tasks.filter((task) => ['queued', 'running'].includes(task.status)).length;
   const partial_task_count: number = tasks.filter((task) => count_partial_files(task) > 0 || task.status === 'partial').length;
   const failed_task_count: number = tasks.filter((task) => count_failed_files(task) > 0 || task.status === 'failed').length;
@@ -283,6 +386,7 @@ export function ImportCenterPanel() {
                     <div>
                       <strong>{`${resolve_task_mode_label(task)}任务`}</strong>
                       <span>{`当前阶段：${get_step_label(task.current_step)}`}</span>
+                      <span className='kb-helper-text'>{`任务 ${format_import_task_short_id(task.id)} · 创建于 ${format_import_task_timestamp(task.created_at)}`}</span>
                     </div>
                     <span className='kb-task-status'>{get_status_label(task.status)}</span>
                   </div>
@@ -291,11 +395,14 @@ export function ImportCenterPanel() {
                     <div className='kb-progress-fill' style={{ width: `${task.progress}%` }} />
                   </div>
 
+                  {task.message ? <div className='kb-progress-debug'>{task.message}</div> : null}
+
                   <div className='kb-task-meta'>
+                    <span>{`进度 ${format_progress(task.progress)}`}</span>
                     <span>{`已处理 ${processed_file_count}/${task.total_files}`}</span>
-                    <span>{`分块 ${task.completed_chunks}/${task.total_chunks}`}</span>
+                    <span>{render_task_chunk_summary(task)}</span>
                     <span>{`异常文件 ${problem_file_count}`}</span>
-                    <span>{`策略 ${get_strategy_label(task.strategy)}`}</span>
+                    <span>{render_strategy_summary(task)}</span>
                   </div>
 
                   {task.error ? <span className='kb-helper-text'>{`说明：${task.error}`}</span> : null}
@@ -324,7 +431,11 @@ export function ImportCenterPanel() {
                         <div className='kb-progress-track is-compact'>
                           <div className='kb-progress-fill' style={{ width: `${file.progress}%` }} />
                         </div>
-                        <span>{`分块 ${file.completed_chunks}/${file.total_chunks}，失败 ${file.failed_chunks}`}</span>
+                        {resolve_progress_debug(file.metadata) ? (
+                          <div className='kb-progress-debug is-compact'>{resolve_progress_debug(file.metadata)}</div>
+                        ) : null}
+                        <span>{render_file_progress_summary(file)}</span>
+                        <span>{render_file_strategy_summary(file)}</span>
                         {file.error ? <span className='kb-helper-text'>{`说明：${file.error}`}</span> : null}
                       </div>
                     ))}

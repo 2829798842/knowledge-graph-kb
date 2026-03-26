@@ -152,62 +152,77 @@ class SourceStore:
         now = utc_now_iso()
         rows: list[dict[str, Any]] = []
         normalized_paragraphs = self._normalize_paragraph_positions(paragraphs)
+        raw_positions = [paragraph.get("position") for paragraph in paragraphs[:20]]
+        normalized_positions = [paragraph.get("position") for paragraph in normalized_paragraphs[:20]]
         logger.debug(
             "开始写入来源段落：source_id=%s paragraph_count=%s raw_positions=%s normalized_positions=%s",
             source_id,
             len(paragraphs),
-            [paragraph.get("position") for paragraph in paragraphs[:20]],
-            [paragraph.get("position") for paragraph in normalized_paragraphs[:20]],
+            raw_positions,
+            normalized_positions,
         )
-        with self.gateway.transaction() as connection:
-            existing_row = connection.execute(
-                "SELECT COUNT(*) AS paragraph_count FROM paragraphs WHERE source_id = ?",
-                (source_id,),
-            ).fetchone()
-            existing_count = int(existing_row["paragraph_count"] or 0) if existing_row else 0
-            if existing_count > 0:
-                logger.warning(
-                    "检测到来源已存在旧段落 将先清理后重写 source_id=%s existing_count=%s",
-                    source_id,
-                    existing_count,
-                )
-                connection.execute("DELETE FROM paragraphs WHERE source_id = ?", (source_id,))
-            for paragraph in normalized_paragraphs:
-                paragraph_id = str(uuid4())
-                row = {
-                    "id": paragraph_id,
-                    "source_id": source_id,
-                    "position": int(paragraph["position"]),
-                    "content": str(paragraph["content"]),
-                    "knowledge_type": str(paragraph.get("knowledge_type") or "mixed"),
-                    "token_count": int(paragraph.get("token_count") or 0),
-                    "vector_state": str(paragraph.get("vector_state") or "pending"),
-                    "metadata": dict(paragraph.get("metadata", {})),
-                    "created_at": now,
-                    "updated_at": now,
-                }
-                connection.execute(
-                    """
-                    INSERT INTO paragraphs (
-                        id, source_id, position, content, knowledge_type, token_count,
-                        vector_state, metadata, created_at, updated_at
+        existing_count = 0
+        try:
+            with self.gateway.transaction() as connection:
+                existing_row = connection.execute(
+                    "SELECT COUNT(*) AS paragraph_count FROM paragraphs WHERE source_id = ?",
+                    (source_id,),
+                ).fetchone()
+                existing_count = int(existing_row["paragraph_count"] or 0) if existing_row else 0
+                if existing_count > 0:
+                    logger.warning(
+                        "检测到来源已存在旧段落 将先清理后重写 source_id=%s existing_count=%s",
+                        source_id,
+                        existing_count,
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        row["id"],
-                        row["source_id"],
-                        row["position"],
-                        row["content"],
-                        row["knowledge_type"],
-                        row["token_count"],
-                        row["vector_state"],
-                        self.gateway.dump_json(row["metadata"]),
-                        row["created_at"],
-                        row["updated_at"],
-                    ),
-                )
-                rows.append(row)
+                    connection.execute("DELETE FROM paragraphs WHERE source_id = ?", (source_id,))
+                for paragraph in normalized_paragraphs:
+                    paragraph_id = str(uuid4())
+                    row = {
+                        "id": paragraph_id,
+                        "source_id": source_id,
+                        "position": int(paragraph["position"]),
+                        "content": str(paragraph["content"]),
+                        "knowledge_type": str(paragraph.get("knowledge_type") or "mixed"),
+                        "token_count": int(paragraph.get("token_count") or 0),
+                        "vector_state": str(paragraph.get("vector_state") or "pending"),
+                        "metadata": dict(paragraph.get("metadata", {})),
+                        "created_at": now,
+                        "updated_at": now,
+                    }
+                    connection.execute(
+                        """
+                        INSERT INTO paragraphs (
+                            id, source_id, position, content, knowledge_type, token_count,
+                            vector_state, metadata, created_at, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            row["id"],
+                            row["source_id"],
+                            row["position"],
+                            row["content"],
+                            row["knowledge_type"],
+                            row["token_count"],
+                            row["vector_state"],
+                            self.gateway.dump_json(row["metadata"]),
+                            row["created_at"],
+                            row["updated_at"],
+                        ),
+                    )
+                    rows.append(row)
+        except Exception:
+            logger.exception(
+                "来源段落写入失败：source_id=%s paragraph_count=%s existing_count=%s raw_positions=%s normalized_positions=%s previews=%s",
+                source_id,
+                len(paragraphs),
+                existing_count,
+                raw_positions,
+                normalized_positions,
+                [str(paragraph.get("content") or "")[:80] for paragraph in normalized_paragraphs[:5]],
+            )
+            raise
         logger.debug(
             "来源段落写入完成：source_id=%s paragraph_count=%s position_range=%s",
             source_id,

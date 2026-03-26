@@ -55,13 +55,16 @@ def create_manual_relation(
     payload: ManualRelationRequest,
     graph_service=Depends(get_graph_service),
 ) -> ManualRelationItem:
-    relation = graph_service.create_manual_relation(
-        subject_node_id=payload.subject_node_id,
-        predicate=payload.predicate,
-        object_node_id=payload.object_node_id,
-        weight=payload.weight,
-        metadata=payload.metadata,
-    )
+    try:
+        relation = graph_service.create_manual_relation(
+            subject_node_id=payload.subject_node_id,
+            predicate=payload.predicate,
+            object_node_id=payload.object_node_id,
+            weight=payload.weight,
+            metadata=payload.metadata,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return ManualRelationItem(**relation)
 
 

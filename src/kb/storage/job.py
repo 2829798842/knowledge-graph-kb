@@ -38,7 +38,7 @@ class ImportJobStore:
             "total_chunks": 0,
             "completed_chunks": 0,
             "failed_chunks": 0,
-            "message": "Queued import job",
+            "message": "导入任务已排队，等待执行。",
             "error": None,
             "params": params,
             "created_at": now,
@@ -351,7 +351,7 @@ class ImportJobStore:
                 UPDATE import_jobs
                 SET status = 'aborted',
                     current_step = 'aborted',
-                    message = 'Application restarted before job completion.',
+                    message = '应用重启时任务尚未完成，已标记为中止。',
                     finished_at = COALESCE(finished_at, ?),
                     updated_at = ?
                 WHERE status IN ('queued', 'running')

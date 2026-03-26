@@ -237,9 +237,25 @@ class ImportPipeline:
             status="running",
             current_step="splitting",
             progress=8.0,
-            metadata=import_file_metadata,
+            metadata={
+                **import_file_metadata,
+                "progress_message": (
+                    f"正在按 {strategy} 策略切分文本：{source_name} | 文本长度 {len(raw_text)} | "
+                    f"表格结构 {'是' if spreadsheet_document is not None else '否'}"
+                ),
+                "progress_detail_label": "段落分块",
+                "progress_detail_current": 0,
+                "progress_detail_total": 0,
+            },
         )
-        on_progress(8.0, "splitting", f"正在按 {strategy} 策略切分文本：{source_name}")
+        on_progress(
+            8.0,
+            "splitting",
+            (
+                f"正在按 {strategy} 策略切分文本：{source_name} | 文本长度 {len(raw_text)} | "
+                f"表格结构 {'是' if spreadsheet_document is not None else '否'}"
+            ),
+        )
 
         paragraph_payloads = self._build_paragraph_payloads(
             raw_text=raw_text,
@@ -299,14 +315,27 @@ class ImportPipeline:
             source_name,
         )
         self.job_store.update_job_file(file_id, source_id=str(source["id"]), current_step="indexing", progress=18.0)
-        on_progress(18.0, "indexing", f"正在写入来源记录：{source_name}")
+        on_progress(
+            18.0,
+            "indexing",
+            f"正在写入来源记录：{source_name} | source_id={str(source['id'])} | 段落数 {len(paragraph_payloads)}",
+        )
 
         paragraph_rows = self.source_store.add_paragraphs(source_id=str(source["id"]), paragraphs=paragraph_payloads)
         self.record_store.sync_rows_for_paragraphs(paragraph_rows)
         self._ensure_not_cancelled(is_cancel_requested)
 
         self.job_store.update_job_file(file_id, current_step="embedding", progress=36.0)
-        on_progress(36.0, "embedding", f"正在为 {len(paragraph_rows)} 个段落生成向量")
+        embedding_runtime_config = self.model_config_service.resolve_runtime_configuration()
+        on_progress(
+            36.0,
+            "embedding",
+            (
+                f"正在为 {len(paragraph_rows)} 个段落生成向量：{source_name} | "
+                f"provider={embedding_runtime_config.provider} | "
+                f"embedding_model={embedding_runtime_config.embedding_model}"
+            ),
+        )
         logger.debug(
             "导入向量生成开始：job_id=%s file_id=%s source_id=%s paragraph_count=%s total_char_count=%s",
             job_id,
@@ -380,6 +409,7 @@ class ImportPipeline:
             extraction_result, extraction_warning = self._extract_document_graph(
                 document_name=source_name,
                 paragraph_rows=paragraph_rows,
+                chunk_rows=chunk_rows,
                 file_id=file_id,
                 on_progress=on_progress,
                 is_cancel_requested=is_cancel_requested,
@@ -395,7 +425,14 @@ class ImportPipeline:
         self._ensure_not_cancelled(is_cancel_requested)
 
         self.job_store.update_job_file(file_id, current_step="writing", progress=84.0)
-        on_progress(84.0, "writing", f"正在写入图谱数据：{source_name}")
+        on_progress(
+            84.0,
+            "writing",
+            (
+                f"正在写入图谱数据：{source_name} | 实体 {len(extraction_result['entities'])} | "
+                f"关系 {len(extraction_result['relations'])}"
+            ),
+        )
         self._write_entities_and_relations(
             source_id=str(source["id"]),
             paragraph_rows=paragraph_rows,
@@ -445,11 +482,23 @@ class ImportPipeline:
             status="partial" if extraction_warning else "completed",
             current_step="completed",
             progress=100.0,
-            metadata=final_file_metadata,
+            metadata={
+                **final_file_metadata,
+                "progress_detail_label": "段落分块",
+                "progress_detail_current": len(paragraph_rows),
+                "progress_detail_total": len(paragraph_rows),
+            },
             error=extraction_warning,
         )
         if extraction_warning:
-            on_progress(100.0, "completed", f"导入完成，但实体抽取存在告警：{source_name}")
+            on_progress(
+                100.0,
+                "completed",
+                (
+                    f"导入完成，但实体抽取存在告警：{source_name} | 段落 {len(paragraph_rows)} | "
+                    f"实体 {len(extraction_result['entities'])} | 关系 {len(extraction_result['relations'])}"
+                ),
+            )
             logger.warning(
                 "导入文件完成，但实体抽取存在告警：job_id=%s file_id=%s source_id=%s "
                 "paragraph_count=%s entity_count=%s relation_count=%s warning=%s",
@@ -462,7 +511,14 @@ class ImportPipeline:
                 extraction_warning,
             )
         else:
-            on_progress(100.0, "completed", f"导入完成：{source_name}")
+            on_progress(
+                100.0,
+                "completed",
+                (
+                    f"导入完成：{source_name} | 段落 {len(paragraph_rows)} | "
+                    f"实体 {len(extraction_result['entities'])} | 关系 {len(extraction_result['relations'])}"
+                ),
+            )
             logger.info(
                 "导入文件完成：job_id=%s file_id=%s source_id=%s paragraph_count=%s entity_count=%s relation_count=%s",
                 job_id,
@@ -595,6 +651,7 @@ class ImportPipeline:
         *,
         document_name: str,
         paragraph_rows: list[dict[str, Any]],
+        chunk_rows: list[dict[str, Any]],
         file_id: str,
         on_progress: PipelineProgressCallback,
         is_cancel_requested: CancelChecker,
@@ -616,6 +673,7 @@ class ImportPipeline:
         """
 
         windows = _build_extraction_windows([str(paragraph["content"]) for paragraph in paragraph_rows])
+        runtime_config = self.model_config_service.resolve_runtime_configuration()
         logger.info(
             "开始分窗口执行实体关系抽取：document_name=%s file_id=%s paragraph_count=%s window_count=%s",
             document_name,
@@ -644,8 +702,27 @@ class ImportPipeline:
             total_windows = len(windows)
             progress_ratio = max(0.0, min((window_index - 1) / max(total_windows, 1), 1.0))
             file_progress = round(52.0 + 30.0 * progress_ratio, 2)
-            self.job_store.update_job_file(file_id, current_step="extracting", progress=file_progress)
-            on_progress(file_progress, "extracting", f"{document_name} 正在抽取实体关系：{window_index}/{total_windows}")
+            file_row = self.job_store.get_job_file(file_id)
+            self.job_store.update_job_file(
+                file_id,
+                current_step="extracting",
+                progress=file_progress,
+                metadata={
+                    **dict(file_row.get("metadata", {}) if file_row is not None else {}),
+                    "progress_detail_label": "抽取窗口",
+                    "progress_detail_current": window_index,
+                    "progress_detail_total": total_windows,
+                },
+            )
+            on_progress(
+                file_progress,
+                "extracting",
+                (
+                    f"{document_name} 正在抽取实体关系：{window_index}/{total_windows} | "
+                    f"provider={runtime_config.provider} | model={runtime_config.llm_model} | "
+                    f"chars={len(window.text)} | tokens={count_tokens(window.text)}"
+                ),
+            )
             logger.debug(
                 "实体关系抽取窗口开始：document_name=%s file_id=%s window_index=%s total_windows=%s chunk_count=%s text_length=%s token_count=%s",
                 document_name,
@@ -660,9 +737,18 @@ class ImportPipeline:
                 partial_result = self.gateway.extract_document_graph(
                     document_name=document_name,
                     text=window.text,
-                    window_label=f"window-{window.index}",
+                    window_label=f"window-{window_index}",
                 )
                 partial_results.append(partial_result)
+                self._mark_extracted_window_chunks(
+                    document_name=document_name,
+                    file_id=file_id,
+                    window_index=window_index,
+                    total_windows=total_windows,
+                    window=window,
+                    chunk_rows=chunk_rows,
+                    paragraph_rows=paragraph_rows,
+                )
                 logger.debug(
                     "实体关系抽取窗口完成：document_name=%s file_id=%s window_index=%s entity_count=%s relation_count=%s",
                     document_name,
@@ -687,6 +773,44 @@ class ImportPipeline:
                 )
                 break
         return _merge_extraction_results(partial_results), extraction_warning
+
+    def _mark_extracted_window_chunks(
+        self,
+        *,
+        document_name: str,
+        file_id: str,
+        window_index: int,
+        total_windows: int,
+        window: ExtractionWindow,
+        chunk_rows: list[dict[str, Any]],
+        paragraph_rows: list[dict[str, Any]],
+    ) -> None:
+        updated_chunk_ids: list[str] = []
+        for chunk_index in window.chunk_indexes:
+            if chunk_index < 0 or chunk_index >= len(chunk_rows) or chunk_index >= len(paragraph_rows):
+                continue
+            chunk_row = chunk_rows[chunk_index]
+            paragraph_row = paragraph_rows[chunk_index]
+            self.job_store.update_job_chunk(
+                str(chunk_row["id"]),
+                paragraph_id=str(paragraph_row["id"]),
+                status="completed",
+                step="extracting",
+                progress=100.0,
+                metadata={
+                    "window_index": window_index,
+                    "total_windows": total_windows,
+                    "document_name": document_name,
+                },
+            )
+            updated_chunk_ids.append(str(chunk_row["id"]))
+        logger.debug(
+            "实体关系抽取窗口已推进分块进度：document_name=%s file_id=%s window_index=%s updated_chunk_count=%s",
+            document_name,
+            file_id,
+            window_index,
+            len(updated_chunk_ids),
+        )
 
     def _write_entities_and_relations(
         self,
@@ -904,8 +1028,9 @@ class ImportExecutor:
                         job_id=job_id,
                         file_id=file_id,
                         item=item,
-                        on_progress=lambda progress, step, message, index=file_index: self._update_job_progress(
+                        on_progress=lambda progress, step, message, index=file_index, active_file_id=file_id: self._update_job_progress(
                             job_id=job_id,
+                            file_id=active_file_id,
                             file_index=index,
                             total_files=len(file_rows),
                             file_progress=progress,
@@ -1002,6 +1127,7 @@ class ImportExecutor:
         self,
         *,
         job_id: str,
+        file_id: str,
         file_index: int,
         total_files: int,
         file_progress: float,
@@ -1012,6 +1138,7 @@ class ImportExecutor:
 
         Args:
             job_id: 任务 ID。
+            file_id: 当前文件 ID。
             file_index: 当前文件索引。
             total_files: 文件总数。
             file_progress: 当前文件进度。
@@ -1019,6 +1146,16 @@ class ImportExecutor:
             message: 进度消息。
         """
 
+        file_row = self.job_store.get_job_file(file_id)
+        if file_row is not None:
+            self.job_store.update_job_file(
+                file_id,
+                metadata={
+                    **dict(file_row.get("metadata", {})),
+                    "progress_message": message,
+                    "progress_step": current_step,
+                },
+            )
         overall_progress = round(((file_index + file_progress / 100.0) / max(total_files, 1)) * 100.0, 2)
         self.job_store.update_job(
             job_id,

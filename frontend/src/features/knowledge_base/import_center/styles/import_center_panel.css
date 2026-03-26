@@ -82,6 +82,22 @@
   background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
 }
 
+.kb-progress-debug {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--card-surface) 84%, var(--accent-ghost-bg));
+  border: 1px solid var(--card-border);
+  color: var(--muted-text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.kb-progress-debug.is-compact {
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+
 @media (max-width: 1200px) {
   .kb-import-grid {
     grid-template-columns: 1fr;

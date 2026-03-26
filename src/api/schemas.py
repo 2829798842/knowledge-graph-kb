@@ -193,8 +193,8 @@ class ChatSessionCreateRequest(BaseModel):
 
 class ChatMessageCreateRequest(BaseModel):
     content: str
-    source_ids: list[str] = Field(default_factory=list)
-    worksheet_names: list[str] = Field(default_factory=list)
+    source_ids: list[str] | None = None
+    worksheet_names: list[str] | None = None
     top_k: int | None = None
 
 

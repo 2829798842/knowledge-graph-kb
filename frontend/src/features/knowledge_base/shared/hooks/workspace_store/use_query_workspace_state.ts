@@ -168,6 +168,8 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
       return;
     }
 
+    let answer_session_id: string | null = null;
+
     set_is_querying(true);
     set_last_query_text(normalized_query);
     set_active_workspace('query');
@@ -182,6 +184,7 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
         set_source_results([]);
 
         const session_id = await ensure_active_session();
+        answer_session_id = session_id;
         const detail = await post_chat_message(session_id, {
           content: normalized_query,
           source_ids: selected_source_ids.length ? selected_source_ids : undefined,
@@ -254,6 +257,14 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
         set_error(null);
       });
     } catch (query_error) {
+      if (query_mode === 'answer' && answer_session_id) {
+        try {
+          const detail = await get_chat_session(answer_session_id);
+          await apply_session_detail(detail);
+        } catch {
+          // Ignore refresh errors and keep surfacing the original request failure.
+        }
+      }
       set_error((query_error as Error).message);
     } finally {
       set_is_querying(false);

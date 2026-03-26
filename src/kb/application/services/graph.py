@@ -282,10 +282,10 @@ class GraphService:
                 "paragraph": None,
             }
         if edge_id.startswith("contains:"):
-            _, source_id, paragraph_id = edge_id.split(":", maxsplit=2)
+            source_id, paragraph_id = self._parse_binary_edge_id(edge_id, prefix="contains")
             source = self.source_store.get_source(source_id)
             paragraph = self.source_store.get_paragraph(paragraph_id)
-            if source is None or paragraph is None:
+            if source is None or paragraph is None or str(paragraph.get("source_id") or "") != source_id:
                 raise KeyError(edge_id)
             return {
                 "edge": {
@@ -301,10 +301,14 @@ class GraphService:
                 "paragraph": paragraph,
             }
         if edge_id.startswith("sheet:"):
-            _, source_id, entity_id = edge_id.split(":", maxsplit=2)
+            source_id, entity_id = self._parse_binary_edge_id(edge_id, prefix="sheet")
             source = self.source_store.get_source(source_id)
             entity = self.graph_store.get_entity(entity_id)
             if source is None or entity is None:
+                raise KeyError(edge_id)
+            if self._entity_node_type(entity) != "worksheet":
+                raise KeyError(edge_id)
+            if self._metadata_value(entity, "source_id") != source_id:
                 raise KeyError(edge_id)
             return {
                 "edge": {
@@ -324,11 +328,15 @@ class GraphService:
                 "paragraph": None,
             }
         if edge_id.startswith("mention:"):
-            _, paragraph_id, entity_id = edge_id.split(":", maxsplit=2)
+            paragraph_id, entity_id = self._parse_binary_edge_id(edge_id, prefix="mention")
             paragraph = self.source_store.get_paragraph(paragraph_id)
-            source = None
-            if paragraph is not None:
-                source = self.source_store.get_source(str(paragraph["source_id"]))
+            entity = self.graph_store.get_entity(entity_id)
+            if paragraph is None or entity is None:
+                raise KeyError(edge_id)
+            links = self.graph_store.list_paragraph_entity_links(paragraph_ids=[paragraph_id], entity_id=entity_id)
+            if not links:
+                raise KeyError(edge_id)
+            source = self.source_store.get_source(str(paragraph["source_id"]))
             return {
                 "edge": {
                     "id": edge_id,
@@ -356,10 +364,21 @@ class GraphService:
         weight: float,
         metadata: dict[str, Any],
     ) -> dict[str, Any]:
+        normalized_subject_node_id = str(subject_node_id or "").strip()
+        normalized_object_node_id = str(object_node_id or "").strip()
+        normalized_predicate = str(predicate or "").strip()
+        if not normalized_subject_node_id or not normalized_object_node_id:
+            raise ValueError("手工关系必须选择起点和终点节点。")
+        if not normalized_predicate:
+            raise ValueError("手工关系谓词不能为空。")
+        if weight <= 0:
+            raise ValueError("手工关系权重必须大于 0。")
+        self._assert_node_exists(normalized_subject_node_id)
+        self._assert_node_exists(normalized_object_node_id)
         return self.graph_store.create_manual_relation(
-            subject_node_id=subject_node_id,
-            predicate=predicate,
-            object_node_id=object_node_id,
+            subject_node_id=normalized_subject_node_id,
+            predicate=normalized_predicate,
+            object_node_id=normalized_object_node_id,
             weight=weight,
             metadata=metadata,
         )
@@ -416,6 +435,27 @@ class GraphService:
             return ""
         value = metadata.get(key)
         return str(value).strip() if value is not None else ""
+
+    def _assert_node_exists(self, node_id: str) -> None:
+        if node_id.startswith("source:"):
+            source_id = node_id.split(":", maxsplit=1)[1]
+            if self.source_store.get_source(source_id) is not None:
+                return
+        elif node_id.startswith("paragraph:"):
+            paragraph_id = node_id.split(":", maxsplit=1)[1]
+            if self.source_store.get_paragraph(paragraph_id) is not None:
+                return
+        elif node_id.startswith("entity:"):
+            entity_id = node_id.split(":", maxsplit=1)[1]
+            if self.graph_store.get_entity(entity_id) is not None:
+                return
+        raise ValueError("手工关系引用了不存在的图谱节点。")
+
+    def _parse_binary_edge_id(self, edge_id: str, *, prefix: str) -> tuple[str, str]:
+        parts = edge_id.split(":", maxsplit=2)
+        if len(parts) != 3 or parts[0] != prefix:
+            raise KeyError(edge_id)
+        return parts[1], parts[2]
 
     def _apply_density_filter(self, edges: list[dict[str, Any]], *, density: int) -> list[dict[str, Any]]:
         normalized_density = max(5, min(density, 100))

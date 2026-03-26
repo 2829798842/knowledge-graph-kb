@@ -84,7 +84,10 @@ class Settings(BaseSettings):
     query_ppr_min_hits: int = Field(default=5, validation_alias=AliasChoices("QUERY_PPR_MIN_HITS"))
     query_ppr_candidate_limit: int = Field(default=30, validation_alias=AliasChoices("QUERY_PPR_CANDIDATE_LIMIT"))
     query_history_turns: int = Field(default=3, validation_alias=AliasChoices("QUERY_HISTORY_TURNS"))
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    cors_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"],
+        validation_alias=AliasChoices("CORS_ORIGINS"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -143,4 +146,3 @@ def ensure_app_dirs(settings: Settings | None = None) -> None:
     active_settings.resolved_kb_vector_dir.mkdir(parents=True, exist_ok=True)
     active_settings.resolved_kb_upload_dir.mkdir(parents=True, exist_ok=True)
     active_settings.resolved_model_config_secret_path.parent.mkdir(parents=True, exist_ok=True)
-
