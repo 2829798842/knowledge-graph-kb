@@ -1,5 +1,4 @@
-"""来源浏览服务"""
-
+"""Source browsing and rendering service."""
 from collections import defaultdict
 from typing import Any
 
@@ -12,13 +11,41 @@ logger = get_logger(__name__)
 
 
 class SourceService:
-    """负责来源列表 详情 与段落渲染补全"""
+    """Provide source list, detail, update, and paragraph rendering helpers."""
 
     def __init__(self, *, source_store: SourceStore) -> None:
         self.source_store = source_store
 
     def list_sources(self, *, keyword: str | None = None, limit: int = 100) -> list[dict[str, Any]]:
         return self.source_store.list_sources(limit=limit, keyword=keyword)
+
+    def update_source(
+        self,
+        source_id: str,
+        *,
+        name: str | None = None,
+        summary: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        source = self.source_store.get_source(source_id)
+        if source is None:
+            return None
+
+        next_name = None if name is None else str(name).strip()
+        if next_name is not None and not next_name:
+            raise ValueError("Source name cannot be empty.")
+
+        merged_metadata = source.get("metadata", {}) if metadata is None else {**dict(source.get("metadata", {})), **metadata}
+        updated = self.source_store.update_source(
+            source_id,
+            name=next_name,
+            summary=summary,
+            metadata=merged_metadata,
+        )
+        if updated is None:
+            return None
+        detail = self.get_source_detail(source_id)
+        return detail["source"] if detail is not None else updated
 
     def get_source_detail(self, source_id: str) -> dict[str, Any] | None:
         detail = self.source_store.get_source_detail(source_id)
@@ -48,12 +75,12 @@ class SourceService:
     def list_source_paragraphs(self, source_id: str) -> list[dict[str, Any]] | None:
         source = self.source_store.get_source(source_id)
         if source is None:
-            logger.debug("来源段落列表读取失败：source_id=%s", source_id)
+            logger.debug("Unable to load source paragraphs because the source does not exist. source_id=%s", source_id)
             return None
         paragraphs = self.source_store.list_source_paragraphs(source_id)
         worksheet_rows_by_ref = self._collect_source_row_context(paragraphs)
         logger.debug(
-            "来源段落渲染上下文已加载：source_id=%s paragraph_count=%s worksheet_context_count=%s",
+            "Loaded source paragraph render context. source_id=%s paragraph_count=%s worksheet_context_count=%s",
             source_id,
             len(paragraphs),
             len(worksheet_rows_by_ref),
@@ -73,7 +100,7 @@ class SourceService:
             )
             enriched.append({**paragraph, **render_payload})
         logger.debug(
-            "来源段落渲染完成：source_id=%s paragraph_count=%s rendered_kinds=%s",
+            "Finished rendering source paragraphs. source_id=%s paragraph_count=%s render_kinds=%s",
             source_id,
             len(enriched),
             [str(paragraph.get("render_kind") or "") for paragraph in enriched[:12]],
@@ -88,16 +115,9 @@ class SourceService:
     ) -> list[dict[str, Any]]:
         if row_index <= 0:
             return list(rows)
-        return [
-            row
-            for row in rows
-            if abs(int(row.get("row_index") or 0) - row_index) <= 1
-        ]
+        return [row for row in rows if abs(int(row.get("row_index") or 0) - row_index) <= 1]
 
-    def _collect_source_row_context(
-        self,
-        paragraphs: list[dict[str, Any]],
-    ) -> dict[tuple[str, str], list[dict[str, Any]]]:
+    def _collect_source_row_context(self, paragraphs: list[dict[str, Any]]) -> dict[tuple[str, str], list[dict[str, Any]]]:
         grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
         for paragraph in paragraphs:
             metadata = dict(paragraph.get("metadata") or {})

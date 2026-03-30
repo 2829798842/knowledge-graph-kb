@@ -1,139 +1,243 @@
-/**
- * Query-studio panel styles.
- */
-
-.kb-query-shell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
-  gap: 14px;
-  min-height: 0;
-  height: 100%;
-  overflow: hidden;
-}
-
-.kb-query-main,
-.kb-query-rail {
-  min-height: 0;
-}
-
-.kb-query-main {
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.kb-query-rail {
-  display: grid;
-  gap: 14px;
-  align-content: start;
-  overflow: auto;
-  padding-right: 4px;
-}
-
-.kb-chat-stage {
-  display: grid;
-  gap: 14px;
-  min-height: 0;
-}
-
-.kb-query-stage-head {
-  display: grid;
+.kb-chat-page {
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-}
-
-.kb-query-hero {
-  display: grid;
-  gap: 8px;
-  padding: 18px 20px;
-  border-radius: 24px;
+  min-height: 0;
   background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-primary) 11%, transparent), transparent 36%),
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-surface) 98%, transparent), color-mix(in srgb, var(--accent-ghost-bg) 64%, transparent));
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 14%, transparent);
+    linear-gradient(180deg, color-mix(in srgb, var(--glass-strong) 94%, transparent), color-mix(in srgb, var(--glass-surface) 90%, transparent));
 }
 
-.kb-query-hero h3,
-.kb-chat-thread-card h3,
-.kb-query-results-section h3 {
-  margin: 0;
+.kb-chat-topbar,
+.kb-chat-composer-card,
+.kb-chat-thread-shell {
+  border: 1px solid color-mix(in srgb, var(--card-border) 72%, var(--glass-border));
+  border-radius: 24px;
+  background: color-mix(in srgb, var(--panel-surface) 90%, transparent);
 }
 
-.kb-query-hero p,
-.kb-query-results-section p,
-.kb-answer-panel p {
-  margin: 0;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  line-height: 1.7;
+.kb-chat-topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
 }
 
-.kb-chat-session-strip {
+.kb-chat-session-rail {
   display: flex;
   gap: 8px;
+  min-width: 0;
   overflow: auto;
-  padding-bottom: 4px;
+  padding-bottom: 2px;
+}
+
+.kb-chat-topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.kb-chat-session-pill,
+.kb-chat-session-status {
+  display: grid;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--card-border) 78%, var(--glass-border));
+  background: color-mix(in srgb, var(--card-surface) 78%, transparent);
+  white-space: nowrap;
 }
 
 .kb-chat-session-pill {
-  display: grid;
-  gap: 4px;
-  min-width: 180px;
-  padding: 12px 14px;
-  border-radius: 18px;
-  border: 1px solid var(--card-border);
-  background: var(--card-surface);
-  color: var(--text-primary);
+  min-width: 120px;
   text-align: left;
 }
 
-.kb-chat-session-pill span {
-  color: var(--text-secondary);
-  font-size: 0.82rem;
-}
-
 .kb-chat-session-pill.is-active {
-  border-color: var(--accent-primary);
+  border-color: color-mix(in srgb, var(--accent-primary) 54%, var(--card-border));
   background: var(--accent-ghost-bg);
 }
 
-.kb-chat-thread-card,
-.kb-query-results-section,
-.kb-chat-composer-card {
-  display: grid;
-  gap: 14px;
+.kb-chat-session-pill span,
+.kb-chat-session-status {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
 }
 
-.kb-answer-thread {
+.kb-chat-thread-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.kb-chat-thread {
   display: grid;
+  gap: 14px;
+  align-content: start;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 14px;
+}
+
+.kb-chat-empty {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  align-content: start;
+  min-height: 0;
+  padding: 2px 0 0;
+  text-align: left;
+}
+
+.kb-chat-empty h3 {
+  margin: 0;
+  font-size: clamp(1.3rem, 2vw, 1.72rem);
+}
+
+.kb-chat-empty p {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--text-secondary);
+}
+
+.kb-chat-bubble {
+  display: grid;
+  gap: 12px;
+  max-width: min(840px, 100%);
+  padding: 16px;
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--card-border) 72%, var(--glass-border));
+}
+
+.kb-chat-bubble.is-user {
+  justify-self: end;
+  background: color-mix(in srgb, var(--accent-primary) 8%, var(--panel-surface));
+}
+
+.kb-chat-bubble.is-assistant {
+  justify-self: start;
+  background: color-mix(in srgb, var(--card-surface) 88%, transparent);
+}
+
+.kb-chat-bubble.is-pending {
+  border-style: dashed;
+}
+
+.kb-chat-bubble-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+}
+
+.kb-chat-bubble-head span {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.kb-chat-bubble-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.7;
+}
+
+.kb-chat-sources,
+.kb-chat-diagnostics,
+.kb-chat-sources-body,
+.kb-chat-diagnostics-body,
+.kb-chat-diagnostics-trace {
+  display: grid;
+  gap: 10px;
+}
+
+.kb-chat-sources-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--card-border) 78%, var(--glass-border));
+  background: color-mix(in srgb, var(--card-surface) 78%, transparent);
+  color: var(--text-primary);
+}
+
+.kb-chat-sources-toggle span {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.kb-chat-diagnostics-trace-row {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--card-border) 70%, var(--glass-border));
+  background: color-mix(in srgb, var(--accent-ghost-bg) 60%, transparent);
+}
+
+.kb-chat-diagnostics-trace-row span {
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+}
+
+.kb-chat-sources-scroll {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.kb-chat-source-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--card-border) 72%, var(--glass-border));
+  background: color-mix(in srgb, var(--card-surface) 84%, transparent);
+}
+
+.kb-chat-source-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.kb-chat-source-head span,
+.kb-chat-source-meta span,
+.kb-chat-composer-meta span {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+
+.kb-chat-source-meta,
+.kb-chat-composer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.kb-chat-sources-pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
 }
 
-.kb-chat-message {
+.kb-chat-composer-card {
   display: grid;
-  gap: 8px;
-  max-width: min(880px, 100%);
-  padding: 16px 18px;
-  border-radius: 22px;
-  border: 1px solid var(--card-border);
-  background: var(--card-surface);
+  gap: 10px;
+  padding: 10px 12px;
 }
 
-.kb-chat-message.is-user {
-  justify-self: end;
-  background: color-mix(in srgb, var(--accent-ghost-bg) 86%, transparent);
+.kb-chat-composer-main {
+  display: grid;
+  gap: 10px;
 }
 
-.kb-chat-message.is-assistant {
-  justify-self: start;
-}
-
-.kb-chat-message p {
-  margin: 0;
-  white-space: pre-wrap;
-  line-height: 1.75;
-}
-
-.kb-chat-composer-card textarea {
-  min-height: 140px;
+.kb-chat-composer-input textarea {
+  min-height: 92px;
 }
 
 .kb-chat-composer-actions {
@@ -143,40 +247,31 @@
   align-items: center;
 }
 
-.kb-chat-composer-actions .kb-helper-text {
-  flex: 1;
-}
-
-.kb-query-note {
+.kb-settings-modal {
   display: grid;
-  gap: 6px;
-  padding: 16px;
-  border-radius: 18px;
-  background: color-mix(in srgb, var(--accent-ghost-bg) 78%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent-primary) 8%, transparent);
+  gap: 16px;
 }
 
-.kb-retrieval-trace-stack {
-  gap: 10px;
-}
-
-.kb-retrieval-lane {
-  min-height: 100%;
-}
-
-@media (max-width: 1280px) {
-  .kb-query-shell {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 780px) {
-  .kb-chat-message {
-    max-width: 100%;
-  }
-
-  .kb-chat-composer-actions {
+@media (max-width: 980px) {
+  .kb-chat-topbar,
+  .kb-chat-composer-actions,
+  .kb-chat-source-head,
+  .kb-chat-sources-pagination {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .kb-chat-topbar-actions {
+    justify-content: flex-start;
+  }
+
+  .kb-chat-bubble {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .kb-chat-thread {
+    padding: 14px;
   }
 }

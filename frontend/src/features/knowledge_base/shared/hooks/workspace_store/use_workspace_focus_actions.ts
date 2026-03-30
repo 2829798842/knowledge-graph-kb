@@ -1,7 +1,3 @@
-/**
- * Cross-workspace focus and selection actions.
- */
-
 import type { Dispatch, SetStateAction } from 'react';
 
 import type { WorkspaceTab } from '../../types/knowledge_base_types';
@@ -9,6 +5,7 @@ import type { WorkspaceTab } from '../../types/knowledge_base_types';
 interface WorkspaceFocusActionsProps {
   default_graph_density: number;
   set_active_workspace: Dispatch<SetStateAction<WorkspaceTab>>;
+  set_is_source_library_open: Dispatch<SetStateAction<boolean>>;
   set_include_paragraphs: Dispatch<SetStateAction<boolean>>;
   set_selected_edge_id: Dispatch<SetStateAction<string | null>>;
   set_selected_node_id: Dispatch<SetStateAction<string | null>>;
@@ -23,6 +20,7 @@ export function use_workspace_focus_actions(props: WorkspaceFocusActionsProps) {
   const {
     default_graph_density,
     set_active_workspace,
+    set_is_source_library_open,
     set_include_paragraphs,
     set_selected_edge_id,
     set_selected_node_id,
@@ -51,9 +49,10 @@ export function use_workspace_focus_actions(props: WorkspaceFocusActionsProps) {
   }
 
   function focus_source(source_id: string): void {
+    set_active_workspace('chat');
+    set_is_source_library_open(true);
     set_selected_source_browser_id(source_id);
     set_selected_source_ids([source_id]);
-    set_active_workspace('source');
     set_highlighted_node_ids([`source:${source_id}`]);
     set_highlighted_edge_ids([]);
   }

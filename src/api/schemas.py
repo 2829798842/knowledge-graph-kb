@@ -9,6 +9,23 @@ class SystemHealthResponse(BaseModel):
     status: str = "ok"
 
 
+class SystemCheckItem(BaseModel):
+    name: str
+    ok: bool
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class SystemReadyResponse(BaseModel):
+    status: str
+    checks: list[SystemCheckItem] = Field(default_factory=list)
+
+
+class ApiErrorResponse(BaseModel):
+    code: str
+    message: str
+
+
 class ModelConfigResponse(BaseModel):
     provider: str
     base_url: str
@@ -128,6 +145,16 @@ class GraphEdgeDetailResponse(BaseModel):
     paragraph: dict[str, Any] | None = None
 
 
+class GraphNodeUpdateRequest(BaseModel):
+    label: str
+
+
+class GraphNodeCreateRequest(BaseModel):
+    label: str
+    description: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ManualRelationRequest(BaseModel):
     subject_node_id: str
     predicate: str
@@ -149,6 +176,12 @@ class ManualRelationItem(BaseModel):
 
 class StatusResponse(BaseModel):
     status: str
+
+
+class SourceUpdateRequest(BaseModel):
+    name: str | None = None
+    summary: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class CitationItem(BaseModel):
@@ -363,6 +396,9 @@ class ImportJobFileItem(BaseModel):
     storage_path: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
     error: str | None = None
+    failure_stage: str | None = None
+    step_durations: dict[str, float] = Field(default_factory=dict)
+    stats: dict[str, Any] = Field(default_factory=dict)
     created_at: str
     updated_at: str
     chunks: list[ImportJobChunkItem] = Field(default_factory=list)
@@ -385,6 +421,10 @@ class ImportJobItem(BaseModel):
     message: str | None = None
     error: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
+    failure_stage: str | None = None
+    step_durations: dict[str, float] = Field(default_factory=dict)
+    retry_of: str | None = None
+    stats: dict[str, Any] = Field(default_factory=dict)
     created_at: str
     started_at: str | None = None
     finished_at: str | None = None

@@ -6,7 +6,14 @@ from src.config import Settings, ensure_app_dirs
 from src.kb.application.imports import ImportExecutor, ImportPipeline, ImportService
 from src.kb.application.retrieval import GraphReranker, HybridAnswerRetriever, StructuredParagraphRetriever, VectorParagraphRetriever
 from src.kb.application.search import EntitySearchService, RecordSearchService, RelationSearchService, SourceSearchService
-from src.kb.application.services import AnswerService, ConversationService, GraphService, ModelConfigService, SourceService
+from src.kb.application.services import (
+    AnswerService,
+    ConversationService,
+    GraphService,
+    MaintenanceService,
+    ModelConfigService,
+    SourceService,
+)
 from src.kb.database import SQLiteGateway
 from src.kb.providers import OpenAiGateway
 from src.kb.storage import (
@@ -51,6 +58,7 @@ class KnowledgeBaseContainer:
     conversation_service: ConversationService
     graph_service: GraphService
     source_service: SourceService
+    maintenance_service: MaintenanceService
     import_service: ImportService
 
 
@@ -119,8 +127,18 @@ def build_knowledge_base_container(settings: Settings) -> KnowledgeBaseContainer
     graph_service = GraphService(
         graph_store=graph_store,
         source_store=source_store,
+        vector_index=vector_index,
     )
     source_service = SourceService(source_store=source_store)
+    maintenance_service = MaintenanceService(
+        settings=settings,
+        gateway=gateway,
+        source_store=source_store,
+        graph_store=graph_store,
+        vector_index=vector_index,
+        model_config_service=model_config_service,
+        openai_gateway=openai_gateway,
+    )
     pipeline = ImportPipeline(
         settings=settings,
         model_config_service=model_config_service,
@@ -164,5 +182,6 @@ def build_knowledge_base_container(settings: Settings) -> KnowledgeBaseContainer
         conversation_service=conversation_service,
         graph_service=graph_service,
         source_service=source_service,
+        maintenance_service=maintenance_service,
         import_service=import_service,
     )

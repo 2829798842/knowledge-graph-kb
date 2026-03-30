@@ -9,6 +9,7 @@ from threading import RLock
 from typing import Any
 
 SQLITE_BUSY_TIMEOUT_MS = 30_000
+CURRENT_SCHEMA_VERSION = 2
 
 
 class SQLiteGateway:
@@ -27,6 +28,11 @@ class SQLiteGateway:
                 PRAGMA journal_mode=WAL;
                 PRAGMA synchronous=NORMAL;
                 PRAGMA foreign_keys=ON;
+
+                CREATE TABLE IF NOT EXISTS app_meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
 
                 CREATE TABLE IF NOT EXISTS model_config (
                     id TEXT PRIMARY KEY,
@@ -269,7 +275,31 @@ class SQLiteGateway:
                 CREATE INDEX IF NOT EXISTS idx_record_cells_row_id ON record_cells(record_row_id);
                 """
             )
+            self._apply_migrations(connection)
             connection.commit()
+
+    def get_schema_version(self) -> int:
+        with self._connect() as connection:
+            return self._read_schema_version(connection)
+
+    def check_read_write(self) -> None:
+        connection = self._connect()
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute("SELECT 1")
+            connection.rollback()
+        finally:
+            connection.close()
+
+    def backup_to(self, target_path: Path) -> None:
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as source_connection:
+            destination_connection = sqlite3.connect(target_path)
+            try:
+                source_connection.backup(destination_connection)
+                destination_connection.commit()
+            finally:
+                destination_connection.close()
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
@@ -332,6 +362,44 @@ class SQLiteGateway:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
         return connection
+
+    def _apply_migrations(self, connection: sqlite3.Connection) -> None:
+        current_version = self._read_schema_version(connection)
+        if current_version < 1:
+            self._write_schema_version(connection, 1)
+            current_version = 1
+        if current_version < 2:
+            connection.executescript(
+                """
+                CREATE INDEX IF NOT EXISTS idx_sources_status ON sources(status);
+                CREATE INDEX IF NOT EXISTS idx_manual_relations_subject_node_id ON manual_relations(subject_node_id);
+                CREATE INDEX IF NOT EXISTS idx_manual_relations_object_node_id ON manual_relations(object_node_id);
+                CREATE INDEX IF NOT EXISTS idx_import_job_files_status ON import_job_files(status);
+                """
+            )
+            self._write_schema_version(connection, 2)
+
+    def _read_schema_version(self, connection: sqlite3.Connection) -> int:
+        row = connection.execute(
+            "SELECT value FROM app_meta WHERE key = ?",
+            ("schema_version",),
+        ).fetchone()
+        if row is None:
+            return 0
+        try:
+            return int(row["value"])
+        except (TypeError, ValueError):
+            return 0
+
+    def _write_schema_version(self, connection: sqlite3.Connection, version: int) -> None:
+        connection.execute(
+            """
+            INSERT INTO app_meta (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            ("schema_version", str(version)),
+        )
 
     def _row_to_dict(self, row: sqlite3.Row) -> dict[str, Any]:
         payload = dict(row)

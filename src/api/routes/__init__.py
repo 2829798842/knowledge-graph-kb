@@ -1,4 +1,4 @@
-"""导出 API 路由对象。"""
+"""Route object exports."""
 
 from src.api.routes.configuration import configuration_router
 from src.api.routes.explore import graph_router, source_router

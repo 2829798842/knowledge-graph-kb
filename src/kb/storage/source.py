@@ -128,25 +128,27 @@ class SourceStore:
     def get_source(self, source_id: str) -> dict[str, Any] | None:
         return self.gateway.fetch_one("SELECT * FROM sources WHERE id = ?", (source_id,))
 
-    def list_sources(self, limit: int = 100, keyword: str | None = None) -> list[dict[str, Any]]:
+    def list_sources(self, limit: int | None = 100, keyword: str | None = None) -> list[dict[str, Any]]:
         normalized_keyword = (keyword or "").strip()
         if normalized_keyword:
             like_pattern = f"%{normalized_keyword}%"
-            return self.gateway.fetch_all(
-                """
+            sql = """
                 SELECT *
                 FROM sources
                 WHERE name LIKE ? OR summary LIKE ?
                 ORDER BY updated_at DESC
-                LIMIT ?
-                """,
-                (like_pattern, like_pattern, limit),
-            )
+            """
+            params: tuple[Any, ...]
+            if limit is None:
+                params = (like_pattern, like_pattern)
+            else:
+                sql += "\n                LIMIT ?"
+                params = (like_pattern, like_pattern, limit)
+            return self.gateway.fetch_all(sql, params)
 
-        return self.gateway.fetch_all(
-            "SELECT * FROM sources ORDER BY updated_at DESC LIMIT ?",
-            (limit,),
-        )
+        if limit is None:
+            return self.gateway.fetch_all("SELECT * FROM sources ORDER BY updated_at DESC")
+        return self.gateway.fetch_all("SELECT * FROM sources ORDER BY updated_at DESC LIMIT ?", (limit,))
 
     def add_paragraphs(self, *, source_id: str, paragraphs: list[dict[str, Any]]) -> list[dict[str, Any]]:
         now = utc_now_iso()
@@ -286,6 +288,16 @@ class SourceStore:
     def get_paragraph(self, paragraph_id: str) -> dict[str, Any] | None:
         return self.gateway.fetch_one("SELECT * FROM paragraphs WHERE id = ?", (paragraph_id,))
 
+    def delete_paragraph(self, paragraph_id: str) -> bool:
+        with self.gateway.transaction() as connection:
+            cursor = connection.execute("DELETE FROM paragraphs WHERE id = ?", (paragraph_id,))
+        return cursor.rowcount > 0
+
+    def delete_source(self, source_id: str) -> bool:
+        with self.gateway.transaction() as connection:
+            cursor = connection.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+        return cursor.rowcount > 0
+
     def list_paragraphs_for_source(self, source_id: str) -> list[dict[str, Any]]:
         return self.gateway.fetch_all(
             "SELECT * FROM paragraphs WHERE source_id = ? ORDER BY position ASC",
@@ -296,6 +308,9 @@ class SourceStore:
         """兼容旧调用的来源段落列表别名"""
 
         return self.list_paragraphs_for_source(source_id)
+
+    def list_all_paragraphs(self) -> list[dict[str, Any]]:
+        return self.gateway.fetch_all("SELECT * FROM paragraphs ORDER BY source_id, position")
 
     def get_source_detail(self, source_id: str) -> dict[str, Any] | None:
         source = self.get_source(source_id)

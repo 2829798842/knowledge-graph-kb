@@ -12,7 +12,7 @@ from src.kb.common import (
     build_sheet_edge_id,
     build_source_node_id,
 )
-from src.kb.storage import GraphStore, SourceStore
+from src.kb.storage import GraphStore, SourceStore, VectorIndex
 
 SPREADSHEET_FILE_TYPES: set[str] = {"xlsx", "xlsm", "xls"}
 
@@ -20,9 +20,10 @@ SPREADSHEET_FILE_TYPES: set[str] = {"xlsx", "xlsm", "xls"}
 class GraphService:
     """Project graph nodes, edges, and details from repository data."""
 
-    def __init__(self, *, graph_store: GraphStore, source_store: SourceStore) -> None:
+    def __init__(self, *, graph_store: GraphStore, source_store: SourceStore, vector_index: VectorIndex) -> None:
         self.graph_store = graph_store
         self.source_store = source_store
+        self.vector_index = vector_index
 
     def build_graph(
         self,
@@ -40,6 +41,18 @@ class GraphService:
         paragraph_rows = self.graph_store.list_graph_paragraphs(visible_source_ids)
         paragraph_ids = {str(row["id"]) for row in paragraph_rows}
         entity_rows = self.graph_store.list_graph_entities(visible_source_ids)
+        manual_entity_rows = [
+            entity
+            for entity in self.graph_store.list_entities()
+            if bool(dict(entity.get("metadata") or {}).get("manual_created"))
+        ]
+        if manual_entity_rows:
+            entity_rows = list(
+                {
+                    str(entity["id"]): entity
+                    for entity in [*entity_rows, *manual_entity_rows]
+                }.values()
+            )
         relation_rows = self.graph_store.list_graph_relations(visible_source_ids)
         manual_rows = self.graph_store.list_manual_relations()
         paragraph_entity_links = self.graph_store.list_paragraph_entity_links(source_ids=visible_source_ids)
@@ -355,6 +368,36 @@ class GraphService:
     def list_manual_relations(self) -> list[dict[str, Any]]:
         return self.graph_store.list_manual_relations()
 
+    def create_manual_entity(
+        self,
+        *,
+        label: str,
+        description: str = "",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        normalized_label = " ".join(str(label or "").split()).strip()
+        if not normalized_label:
+            raise ValueError("实体名称不能为空。")
+
+        entity = self.graph_store.create_entity(
+            display_name=normalized_label,
+            description=description,
+            metadata={
+                "entity_kind": "manual_entity",
+                "manual_created": True,
+                **dict(metadata or {}),
+            },
+            appearance_count=0,
+        )
+        return {
+            "id": build_entity_node_id(str(entity["id"])),
+            "type": "entity",
+            "label": self._entity_node_label(entity),
+            "size": self._entity_node_size(entity),
+            "score": None,
+            "metadata": entity,
+        }
+
     def create_manual_relation(
         self,
         *,
@@ -385,6 +428,143 @@ class GraphService:
 
     def delete_manual_relation(self, relation_id: str) -> bool:
         return self.graph_store.delete_manual_relation(relation_id)
+
+    def update_node_label(self, node_id: str, label: str) -> None:
+        normalized_label = " ".join(str(label or "").split()).strip()
+        if not normalized_label:
+            raise ValueError("节点名称不能为空。")
+
+        if node_id.startswith("source:"):
+            source_id = node_id.split(":", maxsplit=1)[1]
+            updated_source = self.source_store.update_source(source_id, name=normalized_label)
+            if updated_source is None:
+                raise KeyError(node_id)
+            return
+
+        if node_id.startswith("entity:"):
+            entity_id = node_id.split(":", maxsplit=1)[1]
+            updated_entity = self.graph_store.update_entity(entity_id, display_name=normalized_label)
+            if updated_entity is None:
+                raise KeyError(node_id)
+            return
+
+        raise ValueError("当前节点类型不支持重命名。")
+
+    def delete_node(self, node_id: str) -> None:
+        if node_id.startswith("source:"):
+            self.delete_source(node_id.split(":", maxsplit=1)[1])
+            return
+
+        if node_id.startswith("paragraph:"):
+            self._delete_paragraph(node_id.split(":", maxsplit=1)[1])
+            return
+
+        if node_id.startswith("entity:"):
+            self._delete_entity(node_id.split(":", maxsplit=1)[1])
+            return
+
+        raise KeyError(node_id)
+
+    def delete_edge(self, edge_id: str) -> None:
+        if edge_id.startswith("manual:"):
+            relation_id = edge_id.split(":", maxsplit=1)[1]
+            if not self.graph_store.delete_manual_relation(relation_id):
+                raise KeyError(edge_id)
+            return
+
+        if edge_id.startswith("relation:"):
+            relation_id = edge_id.split(":", maxsplit=1)[1]
+            relation = self.graph_store.get_relation(relation_id)
+            if relation is None:
+                raise KeyError(edge_id)
+            if not self.graph_store.delete_relation(relation_id):
+                raise KeyError(edge_id)
+            self._cleanup_entities(
+                [
+                    str(relation["subject_entity_id"]),
+                    str(relation["object_entity_id"]),
+                ]
+            )
+            return
+
+        raise ValueError("当前边类型不支持删除。")
+
+    def delete_source(self, source_id: str) -> None:
+        source = self.source_store.get_source(source_id)
+        if source is None:
+            raise KeyError(source_id)
+
+        paragraphs = self.source_store.list_paragraphs_for_source(source_id)
+        paragraph_ids = [str(paragraph["id"]) for paragraph in paragraphs]
+        source_relations = self.graph_store.list_relations_referencing_source(source_id)
+        affected_entity_ids = [
+            str(link["entity_id"])
+            for link in self.graph_store.list_paragraph_entity_links(paragraph_ids=paragraph_ids)
+        ]
+        affected_entity_ids.extend(str(relation["subject_entity_id"]) for relation in source_relations)
+        affected_entity_ids.extend(str(relation["object_entity_id"]) for relation in source_relations)
+
+        self.graph_store.delete_relations_for_paragraphs(paragraph_ids)
+        self.graph_store.delete_relations([str(relation["id"]) for relation in source_relations])
+        self.graph_store.delete_manual_relations_for_nodes(
+            [build_source_node_id(source_id)] + [build_paragraph_node_id(paragraph_id) for paragraph_id in paragraph_ids]
+        )
+
+        if not self.source_store.delete_source(source_id):
+            raise KeyError(source_id)
+
+        self.vector_index.remove_source(source_id)
+        self._cleanup_entities(affected_entity_ids)
+
+    def _delete_paragraph(self, paragraph_id: str) -> None:
+        paragraph = self.source_store.get_paragraph(paragraph_id)
+        if paragraph is None:
+            raise KeyError(paragraph_id)
+
+        affected_entity_ids = [
+            str(link["entity_id"])
+            for link in self.graph_store.list_paragraph_entity_links(paragraph_ids=[paragraph_id])
+        ]
+        paragraph_relations = self.graph_store.list_relations_for_paragraph(paragraph_id)
+        affected_entity_ids.extend(str(relation["subject_entity_id"]) for relation in paragraph_relations)
+        affected_entity_ids.extend(str(relation["object_entity_id"]) for relation in paragraph_relations)
+
+        self.graph_store.delete_relations_for_paragraphs([paragraph_id])
+        self.graph_store.delete_manual_relations_for_node(build_paragraph_node_id(paragraph_id))
+
+        if not self.source_store.delete_paragraph(paragraph_id):
+            raise KeyError(paragraph_id)
+
+        self.vector_index.remove_paragraphs([paragraph_id])
+        self._cleanup_entities(affected_entity_ids)
+
+    def _delete_entity(self, entity_id: str) -> None:
+        entity = self.graph_store.get_entity(entity_id)
+        if entity is None:
+            raise KeyError(entity_id)
+
+        self.graph_store.delete_manual_relations_for_node(build_entity_node_id(entity_id))
+        if not self.graph_store.delete_entity(entity_id):
+            raise KeyError(entity_id)
+
+    def _cleanup_entities(self, entity_ids: list[str]) -> None:
+        for entity_id in {str(item).strip() for item in entity_ids if str(item).strip()}:
+            entity = self.graph_store.get_entity(entity_id)
+            if entity is None:
+                continue
+
+            paragraph_link_count = self.graph_store.count_paragraph_links_for_entity(entity_id)
+            relation_count = self.graph_store.count_relations_for_entity(entity_id)
+            is_manual_entity = bool(dict(entity.get("metadata") or {}).get("manual_created"))
+            if paragraph_link_count <= 0 and relation_count <= 0:
+                if is_manual_entity:
+                    self.graph_store.set_entity_appearance_count(entity_id, paragraph_link_count)
+                    continue
+                self.graph_store.delete_manual_relations_for_node(build_entity_node_id(entity_id))
+                self.graph_store.delete_entity(entity_id)
+                continue
+
+            self.graph_store.set_entity_appearance_count(entity_id, paragraph_link_count)
 
     def _source_node_type(self, source: dict[str, Any]) -> str:
         metadata = dict(source.get("metadata") or {})

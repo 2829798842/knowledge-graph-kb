@@ -1,5 +1,4 @@
-"""聚合顶层 API 路由。"""
-
+"""Aggregate top-level API routes."""
 from fastapi import APIRouter
 
 from src.api.routes import (

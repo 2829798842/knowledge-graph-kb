@@ -6,12 +6,16 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
 import {
+  create_graph_node,
   create_manual_relation,
+  delete_graph_edge,
+  delete_graph_node,
   delete_manual_relation,
   fetch_graph,
   get_graph_edge_detail,
   get_graph_node_detail,
   list_manual_relations,
+  update_graph_node,
 } from '../../api/graph_api';
 import { kb_query_keys } from '../../api/query_client';
 import type {
@@ -102,11 +106,18 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
     queryFn: () => get_graph_edge_detail(selected_edge_id!),
     enabled: Boolean(selected_edge_id),
   });
+
   const normalized_graph_state = useMemo<NormalizedGraphState>(
     () => normalize_graph((graph_query.data ?? EMPTY_GRAPH) as KnowledgeGraphRecord),
     [graph_query.data],
   );
   const graph = normalized_graph_state.graph;
+  const graph_error_message =
+    (graph_query.error as Error | null)?.message ??
+    (manual_relations_query.error as Error | null)?.message ??
+    (node_detail_query.error as Error | null)?.message ??
+    (edge_detail_query.error as Error | null)?.message ??
+    null;
 
   async function refresh_graph(): Promise<void> {
     try {
@@ -123,6 +134,46 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
       set_error((refresh_error as Error).message);
     }
   }
+
+  async function refresh_graph_details(): Promise<void> {
+    try {
+      await Promise.all([
+        query_client.invalidateQueries({ queryKey: ['kb', 'graph', 'node-detail'] }),
+        query_client.invalidateQueries({ queryKey: ['kb', 'graph', 'edge-detail'] }),
+      ]);
+    } catch (refresh_error) {
+      set_error((refresh_error as Error).message);
+    }
+  }
+
+  async function refresh_source_queries(): Promise<void> {
+    try {
+      await Promise.all([
+        query_client.invalidateQueries({ queryKey: kb_query_keys.source_list() }),
+        query_client.invalidateQueries({ queryKey: ['kb', 'sources', 'detail'] }),
+        query_client.invalidateQueries({ queryKey: ['kb', 'sources', 'paragraphs'] }),
+      ]);
+    } catch (refresh_error) {
+      set_error((refresh_error as Error).message);
+    }
+  }
+
+  const create_node_mutation = useMutation({
+    mutationFn: (payload: { label: string; description?: string; metadata?: Record<string, unknown> }) =>
+      create_graph_node(payload),
+    onSuccess: async (node) => {
+      set_message(`已创建实体：${node.label}`);
+      set_error(null);
+      set_selected_node_id(node.id);
+      set_selected_edge_id(null);
+      set_highlighted_node_ids([node.id]);
+      set_highlighted_edge_ids([]);
+      await Promise.all([refresh_graph(), refresh_graph_details(), refresh_manual_relations()]);
+    },
+    onError: (graph_error) => {
+      set_error((graph_error as Error).message);
+    },
+  });
 
   const create_relation_mutation = useMutation({
     mutationFn: (payload: {
@@ -153,6 +204,64 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
     },
   });
 
+  const rename_node_mutation = useMutation({
+    mutationFn: (payload: { node_id: string; label: string }) => update_graph_node(payload.node_id, { label: payload.label }),
+    onSuccess: async () => {
+      set_message('已更新节点名称。');
+      set_error(null);
+      await Promise.all([refresh_graph(), refresh_graph_details(), refresh_source_queries()]);
+    },
+    onError: (graph_error) => {
+      set_error((graph_error as Error).message);
+    },
+  });
+
+  const delete_node_mutation = useMutation({
+    mutationFn: (node_id: string) => delete_graph_node(node_id),
+    onSuccess: async (_result, node_id) => {
+      set_selected_node_id((current) => (current === node_id ? null : current));
+      set_highlighted_node_ids((current) => current.filter((item) => item !== node_id));
+      if (node_id.startsWith('source:')) {
+        const source_id = node_id.split(':')[1] ?? '';
+        set_selected_source_ids((current) => current.filter((item) => item !== source_id));
+      }
+      set_message('已删除节点。');
+      set_error(null);
+      await Promise.all([refresh_graph(), refresh_manual_relations(), refresh_source_queries()]);
+    },
+    onError: (graph_error) => {
+      set_error((graph_error as Error).message);
+    },
+  });
+
+  const delete_edge_mutation = useMutation({
+    mutationFn: (edge_id: string) => delete_graph_edge(edge_id),
+    onSuccess: async (_result, edge_id) => {
+      set_selected_edge_id((current) => (current === edge_id ? null : current));
+      set_highlighted_edge_ids((current) => current.filter((item) => item !== edge_id));
+      set_message('已删除关系。');
+      set_error(null);
+      await Promise.all([refresh_graph(), refresh_manual_relations(), refresh_source_queries()]);
+    },
+    onError: (graph_error) => {
+      set_error((graph_error as Error).message);
+    },
+  });
+
+  async function create_entity(
+    label: string,
+    options?: {
+      description?: string;
+      metadata?: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    await create_node_mutation.mutateAsync({
+      label,
+      description: options?.description,
+      metadata: options?.metadata,
+    });
+  }
+
   async function create_relation(
     subject_node_id: string,
     predicate: string,
@@ -169,6 +278,18 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
 
   async function remove_manual_relation(relation_id: string): Promise<void> {
     await remove_relation_mutation.mutateAsync(relation_id);
+  }
+
+  async function rename_node(node_id: string, label: string): Promise<void> {
+    await rename_node_mutation.mutateAsync({ node_id, label });
+  }
+
+  async function delete_node(node_id: string): Promise<void> {
+    await delete_node_mutation.mutateAsync(node_id);
+  }
+
+  async function delete_edge(edge_id: string): Promise<void> {
+    await delete_edge_mutation.mutateAsync(edge_id);
   }
 
   useEffect(() => {
@@ -199,7 +320,7 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
     if (normalized_graph_state.dropped_edge_count <= 0) {
       return;
     }
-    console.warn(`知识库图谱已忽略 ${normalized_graph_state.dropped_edge_count} 条缺少端点节点的关系边。`);
+    console.warn(`知识图谱已忽略 ${normalized_graph_state.dropped_edge_count} 条缺少端点节点的关系边。`);
   }, [normalized_graph_state.dropped_edge_count]);
 
   useEffect(() => {
@@ -228,13 +349,22 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
     set_selected_edge_id,
     node_detail: (node_detail_query.data ?? null) as GraphNodeDetailRecord | null,
     edge_detail: (edge_detail_query.data ?? null) as GraphEdgeDetailRecord | null,
+    graph_error_message,
     highlighted_node_ids,
     set_highlighted_node_ids,
     highlighted_edge_ids,
     set_highlighted_edge_ids,
     is_graph_loading: graph_query.isFetching,
+    is_creating_node: create_node_mutation.isPending,
     is_creating_manual_relation: create_relation_mutation.isPending,
+    is_renaming_node: rename_node_mutation.isPending,
+    is_deleting_node: delete_node_mutation.isPending,
+    is_deleting_edge: delete_edge_mutation.isPending,
+    create_entity,
     create_relation,
     remove_manual_relation,
+    rename_node,
+    delete_node,
+    delete_edge,
   };
 }

@@ -1,4 +1,4 @@
-"""基于 FAISS 的段落向量索引，附带轻量元数据映射。"""
+"""Persistent FAISS-backed paragraph vector index."""
 
 import json
 from dataclasses import dataclass
@@ -10,12 +10,12 @@ import numpy as np
 
 
 class StaleVectorIndexError(RuntimeError):
-    """当存储的索引与当前嵌入模型不匹配时抛出。"""
+    """Raised when the stored index was built by another embedding model."""
 
 
 @dataclass(slots=True)
 class VectorIndexRecord:
-    """与 FAISS 索引一并保存的段落元数据。"""
+    """Metadata stored alongside each paragraph embedding."""
 
     paragraph_id: str
     source_id: str
@@ -26,7 +26,7 @@ class VectorIndexRecord:
 
 @dataclass(slots=True)
 class VectorSearchResult:
-    """FAISS 检索返回的段落命中结果。"""
+    """A vector-search hit returned from FAISS."""
 
     paragraph_id: str
     source_id: str
@@ -38,7 +38,7 @@ class VectorSearchResult:
 
 
 class VectorIndex:
-    """持久化的 FAISS 索引及段落元数据映射。"""
+    """Persistent FAISS index plus lightweight paragraph metadata."""
 
     INDEX_FILENAME = "kb_vectors.index"
     METADATA_FILENAME = "kb_vectors.meta.json"
@@ -56,9 +56,29 @@ class VectorIndex:
 
     @property
     def model_signature(self) -> str:
-        """返回当前索引绑定的嵌入模型签名。"""
-
         return self._model_signature
+
+    @property
+    def record_count(self) -> int:
+        return len(self._metadata)
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "store_dir": str(self.store_dir),
+            "index_path": str(self.index_path),
+            "metadata_path": str(self.metadata_path),
+            "record_count": len(self._metadata),
+            "dimension": self._dimension,
+            "model_signature": self._model_signature,
+            "index_exists": self.index_path.exists(),
+            "metadata_exists": self.metadata_path.exists(),
+        }
+
+    def check_readable(self) -> None:
+        if self.metadata_path.exists():
+            json.loads(self.metadata_path.read_text(encoding="utf-8"))
+        if self.index_path.exists():
+            faiss.read_index(str(self.index_path))
 
     def add_embeddings(
         self,
@@ -67,14 +87,13 @@ class VectorIndex:
         records: list[VectorIndexRecord],
         embeddings: list[list[float]],
     ) -> None:
-        """写入或更新一批段落向量。"""
-
         if not records:
             return
         if len(records) != len(embeddings):
             raise ValueError("vector record count must match embedding count")
         if self._model_signature and self._model_signature != model_signature:
             self.reset()
+
         record_map: dict[str, dict[str, Any]] = {str(item["paragraph_id"]): item for item in self._metadata}
         for record, embedding in zip(records, embeddings, strict=True):
             record_map[record.paragraph_id] = {
@@ -85,6 +104,7 @@ class VectorIndex:
                 "knowledge_type": record.knowledge_type,
                 "embedding": [float(value) for value in embedding],
             }
+
         self._model_signature = model_signature
         self._metadata = list(record_map.values())
         self._rebuild_index()
@@ -99,19 +119,19 @@ class VectorIndex:
         source_ids: list[str] | None = None,
         paragraph_ids: list[str] | None = None,
     ) -> list[VectorSearchResult]:
-        """按相似度检索段落向量。"""
-
         if self._model_signature and self._model_signature != model_signature:
             self.reset()
             raise StaleVectorIndexError("vector index model signature mismatch")
         if self._index is None or not self._metadata or limit <= 0:
             return []
+
         query_matrix = self._normalize_vectors([query_embedding])
         fetch_limit = self._search_limit(limit=limit, has_filter=bool(source_ids or paragraph_ids))
         similarities, positions = self._index.search(query_matrix, fetch_limit)
         allowed_sources = set(source_ids or [])
         allowed_paragraphs = set(paragraph_ids or [])
         results: list[VectorSearchResult] = []
+
         for similarity, position in zip(similarities[0].tolist(), positions[0].tolist(), strict=True):
             if position < 0 or position >= len(self._metadata):
                 continue
@@ -134,11 +154,10 @@ class VectorIndex:
             )
             if len(results) >= limit:
                 break
+
         return results
 
     def remove_source(self, source_id: str) -> None:
-        """删除指定来源关联的全部向量记录。"""
-
         next_metadata = [payload for payload in self._metadata if str(payload.get("source_id")) != source_id]
         if len(next_metadata) == len(self._metadata):
             return
@@ -146,9 +165,20 @@ class VectorIndex:
         self._rebuild_index()
         self._persist_state()
 
-    def reset(self) -> None:
-        """清空当前向量索引及其元数据。"""
+    def remove_paragraphs(self, paragraph_ids: list[str]) -> None:
+        if not paragraph_ids:
+            return
+        removed_ids = {str(paragraph_id) for paragraph_id in paragraph_ids}
+        next_metadata = [
+            payload for payload in self._metadata if str(payload.get("paragraph_id")) not in removed_ids
+        ]
+        if len(next_metadata) == len(self._metadata):
+            return
+        self._metadata = next_metadata
+        self._rebuild_index()
+        self._persist_state()
 
+    def reset(self) -> None:
         self._metadata = []
         self._dimension = None
         self._index = None

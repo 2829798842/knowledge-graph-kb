@@ -1,7 +1,3 @@
-/**
- * Model-configuration state and actions.
- */
-
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 
@@ -58,14 +54,15 @@ function build_form_signature(form: ModelConfigurationDraft): string {
 
 interface ModelConfigWorkspaceStateProps {
   active_workspace: WorkspaceTab;
+  is_settings_open: boolean;
   set_message: Dispatch<SetStateAction<string>>;
   set_error: Dispatch<SetStateAction<string | null>>;
 }
 
 export function use_model_config_workspace_state(props: ModelConfigWorkspaceStateProps) {
-  const { active_workspace, set_message, set_error } = props;
+  const { active_workspace, is_settings_open, set_message, set_error } = props;
   const query_client = useQueryClient();
-  const [has_opened_model_config, set_has_opened_model_config] = useState<boolean>(active_workspace === 'config');
+  const [has_opened_model_config, set_has_opened_model_config] = useState<boolean>(is_settings_open);
   const [model_configuration_form, set_model_configuration_form] = useState<ModelConfigurationDraft>(
     DEFAULT_MODEL_CONFIGURATION_FORM,
   );
@@ -76,10 +73,10 @@ export function use_model_config_workspace_state(props: ModelConfigWorkspaceStat
     useState<ModelConfigurationTestRecord | null>(null);
 
   useEffect(() => {
-    if (active_workspace === 'config') {
+    if (active_workspace === 'chat' && is_settings_open) {
       set_has_opened_model_config(true);
     }
-  }, [active_workspace]);
+  }, [active_workspace, is_settings_open]);
 
   const model_configuration_query = useQuery({
     queryKey: kb_query_keys.model_config(),
@@ -165,7 +162,7 @@ export function use_model_config_workspace_state(props: ModelConfigWorkspaceStat
     await test_model_configuration_mutation.mutateAsync(model_configuration_form);
   }
 
-  const has_unsaved_model_config_changes: boolean = useMemo(
+  const has_unsaved_model_config_changes = useMemo(
     () => build_form_signature(model_configuration_form) !== saved_form_signature,
     [model_configuration_form, saved_form_signature],
   );

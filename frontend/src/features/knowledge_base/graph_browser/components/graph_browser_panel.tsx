@@ -1,168 +1,49 @@
-/**
- * Graph-browser panel.
- */
-
-import { useDeferredValue, useEffect, useState } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 
 import type { ResolvedTheme } from '../../../../theme';
-import {
-  get_input_mode_label,
-  get_knowledge_type_label,
-  get_strategy_label,
-  NODE_TYPE_LABELS,
-  PREDICATE_SUGGESTIONS,
-} from '../../shared/config/ui_constants';
-import type { KnowledgeGraphRecord, SourceRecord } from '../../shared/types/knowledge_base_types';
+import { GRAPH_VIEWPORT_MODE_LABELS, NODE_TYPE_LABELS, PREDICATE_SUGGESTIONS } from '../../shared/config/ui_constants';
+import type { KnowledgeGraphNodeRecord } from '../../shared/types/knowledge_base_types';
 import { use_graph_browser } from '../hooks/use_graph_browser';
-import '../styles/graph_browser_panel.css';
+import { JsonDetails, MetadataRows } from './graph_browser_detail_blocks';
+import {
+  collect_edge_import_rows,
+  collect_node_import_rows,
+  create_viewport_command,
+  DEFAULT_PREDICATE,
+  DENSITY_PRESETS,
+  edge_action_copy,
+  node_action_copy,
+  node_option_label,
+  selected_source_summary,
+  type ViewportCommand,
+} from './graph_browser_utils';
 import { KnowledgeGraphCanvas } from './knowledge_graph_canvas';
+import '../styles/graph_browser_panel.css';
 
 interface GraphBrowserPanelProps {
   resolved_theme: ResolvedTheme;
 }
 
-function node_option_label(node_id: string, graph: KnowledgeGraphRecord): string {
-  const node = graph.nodes.find((current_node) => current_node.id === node_id);
-  if (!node) {
-    return node_id;
-  }
-  return `${NODE_TYPE_LABELS[node.type] ?? node.type} - ${node.label}`;
+interface RelationDraft {
+  subject_node_id: string;
+  predicate: string;
+  object_node_id: string;
+  weight: number;
 }
 
-function format_metadata_value(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => format_metadata_value(item)).join(', ');
-  }
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
-  }
-  return '';
+const DEFAULT_RELATION_DRAFT: RelationDraft = {
+  subject_node_id: '',
+  predicate: DEFAULT_PREDICATE,
+  object_node_id: '',
+  weight: 0.9,
+};
+
+function normalize_keyword(value: string): string {
+  return value.trim().toLowerCase();
 }
 
-function merge_node_metadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
-  if (!metadata) {
-    return {};
-  }
-  const nested =
-    metadata.metadata && typeof metadata.metadata === 'object' && !Array.isArray(metadata.metadata)
-      ? (metadata.metadata as Record<string, unknown>)
-      : {};
-  return { ...metadata, ...nested };
-}
-
-function collect_node_import_rows(node_type: string, metadata: Record<string, unknown> | undefined): [string, string][] {
-  const merged = merge_node_metadata(metadata);
-  const rows: [string, string][] = [];
-  const file_type = format_metadata_value(merged.source_file_type || merged.file_type);
-  const file_name = format_metadata_value(merged.name);
-  const source_kind = format_metadata_value(merged.source_kind);
-  const input_mode = format_metadata_value(merged.input_mode);
-  const strategy = format_metadata_value(
-    merged.detected_strategy || merged.strategy || merged.source_strategy || merged.import_strategy,
-  );
-
-  if (file_type) {
-    rows.push(['文件类型', file_type]);
-  }
-  if (file_name) {
-    rows.push(['文件名', file_name]);
-  }
-  if (strategy) {
-    rows.push(['导入策略', get_strategy_label(strategy)]);
-  }
-  if (source_kind) {
-    rows.push(['来源类型', get_input_mode_label(source_kind)]);
-  }
-  if (input_mode) {
-    rows.push(['导入方式', get_input_mode_label(input_mode)]);
-  }
-
-  if (node_type === 'paragraph') {
-    const knowledge_type = format_metadata_value(merged.knowledge_type);
-    const worksheet_name = format_metadata_value(merged.worksheet_name);
-    const is_spreadsheet = format_metadata_value(merged.is_spreadsheet).toLowerCase() === 'true';
-
-    if (is_spreadsheet) {
-      rows.push(['表格来源', '是']);
-    }
-    if (knowledge_type) {
-      rows.push(['知识类型', get_knowledge_type_label(knowledge_type)]);
-    }
-    if (worksheet_name) {
-      rows.push(['工作表', worksheet_name]);
-    }
-  }
-
-  if (node_type === 'source' || node_type === 'workbook') {
-    const spreadsheet_sheets = Array.isArray(merged.spreadsheet_sheets)
-      ? merged.spreadsheet_sheets.map((sheet) => format_metadata_value(sheet)).filter((sheet) => sheet.length)
-      : [];
-    if (spreadsheet_sheets.length > 0) {
-      rows.push(['工作表列表', spreadsheet_sheets.join(', ')]);
-    }
-  }
-
-  const source_id = format_metadata_value(merged.source_id);
-  if (source_id) {
-    rows.push(['来源 ID', source_id]);
-  }
-  return rows;
-}
-
-function collect_edge_import_rows(metadata: Record<string, unknown> | undefined): [string, string][] {
-  const rows: [string, string][] = [];
-  if (!metadata) {
-    return rows;
-  }
-  const source_id = format_metadata_value(metadata.source_id);
-  if (source_id) {
-    rows.push(['来源 ID', source_id]);
-  }
-  const paragraph_id = format_metadata_value(metadata.paragraph_id);
-  if (paragraph_id) {
-    rows.push(['段落 ID', paragraph_id]);
-  }
-  return rows;
-}
-
-function selected_source_summary(selected_source_ids: string[], sources: SourceRecord[]): string {
-  if (!selected_source_ids.length) {
-    return '全部来源';
-  }
-
-  const selected_names = sources
-    .filter((source) => selected_source_ids.includes(source.id))
-    .map((source) => source.name);
-
-  if (selected_names.length <= 3) {
-    return selected_names.join('、');
-  }
-  return `${selected_names.slice(0, 3).join('、')} 等 ${selected_names.length} 个来源`;
-}
-
-function MetadataRows(props: { rows: [string, string][] }) {
-  const { rows } = props;
-
-  if (!rows.length) {
-    return null;
-  }
-
-  return (
-    <div className='kb-graph-metadata-list'>
-      {rows.map(([label, value]) => (
-        <div className='kb-graph-metadata-row' key={`${label}-${value}`}>
-          <span>{label}</span>
-          <strong>{value}</strong>
-        </div>
-      ))}
-    </div>
-  );
+function is_entity_node(node: KnowledgeGraphNodeRecord | null | undefined): node is KnowledgeGraphNodeRecord {
+  return Boolean(node && node.type === 'entity');
 }
 
 export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
@@ -178,386 +59,780 @@ export function GraphBrowserPanel(props: GraphBrowserPanelProps) {
     selected_edge_id,
     node_detail,
     edge_detail,
+    graph_error_message,
     highlighted_node_ids,
     highlighted_edge_ids,
+    graph_controls_open,
+    graph_inspector_open,
+    active_graph_drawer,
+    graph_viewport_mode,
     is_graph_loading,
+    is_creating_node,
     is_creating_manual_relation,
+    is_renaming_node,
+    is_deleting_node,
+    is_deleting_edge,
     set_selected_source_ids,
     set_include_paragraphs,
     set_density,
+    set_graph_controls_open,
+    set_graph_inspector_open,
+    set_active_graph_drawer,
+    set_graph_viewport_mode,
     select_node,
     select_edge,
     clear_graph_selection,
+    create_entity,
     create_relation,
-    remove_manual_relation,
+    rename_node,
+    delete_node,
+    delete_edge,
     clear_highlights,
+    refresh_graph,
+    reset_graph_filters,
+    clear_source_filters,
   } = use_graph_browser();
 
-  const [source_filter_text, set_source_filter_text] = useState<string>('');
-  const [subject_node_id, set_subject_node_id] = useState<string>('');
-  const [predicate, set_predicate] = useState<string>(PREDICATE_SUGGESTIONS[0] ?? '提及');
-  const [object_node_id, set_object_node_id] = useState<string>('');
-  const [weight, set_weight] = useState<number>(1);
-  const deferred_source_filter: string = useDeferredValue(source_filter_text.trim().toLowerCase());
+  const [layout_revision, set_layout_revision] = useState(0);
+  const [viewport_command, set_viewport_command] = useState<ViewportCommand | null>(null);
+  const [source_keyword, set_source_keyword] = useState('');
+  const [node_keyword, set_node_keyword] = useState('');
+  const [rename_value, set_rename_value] = useState('');
+  const [create_label, set_create_label] = useState('');
+  const [create_description, set_create_description] = useState('');
+  const [relation_draft, set_relation_draft] = useState<RelationDraft>(DEFAULT_RELATION_DRAFT);
 
-  const node_import_rows: [string, string][] = node_detail
-    ? collect_node_import_rows(node_detail.node.type, node_detail.node.metadata)
-    : [];
-  const edge_import_rows: [string, string][] = edge_detail ? collect_edge_import_rows(edge_detail.edge.metadata) : [];
-
-  const filtered_sources: SourceRecord[] = sources.filter((source) => {
-    if (!deferred_source_filter) {
-      return true;
-    }
-    const haystack: string = `${source.name} ${source.summary ?? ''} ${source.source_kind}`.toLowerCase();
-    return haystack.includes(deferred_source_filter);
-  });
-
-  const relation_node_options = [...graph.nodes].sort((left_node, right_node) =>
-    left_node.label.localeCompare(right_node.label, 'zh-CN'),
+  const node_map = useMemo(() => new Map(graph.nodes.map((node) => [node.id, node])), [graph.nodes]);
+  const selected_node = selected_node_id ? node_map.get(selected_node_id) ?? null : null;
+  const selected_edge = selected_edge_id ? graph.edges.find((edge) => edge.id === selected_edge_id) ?? null : null;
+  const source_scope_label = useMemo(() => selected_source_summary(selected_source_ids, sources), [selected_source_ids, sources]);
+  const relation_node_options = useMemo(
+    () => graph.nodes.filter((node) => node.type === 'entity').sort((left, right) => left.label.localeCompare(right.label, 'zh-CN')),
+    [graph.nodes],
   );
-  const predicate_template_value: string = PREDICATE_SUGGESTIONS.includes(predicate) ? predicate : '__custom__';
-  const focus_label =
-    node_detail?.node.label ??
-    edge_detail?.edge.label ??
-    (selected_source_ids.length ? selected_source_summary(selected_source_ids, sources) : '全部来源');
+  const searchable_nodes = useMemo(
+    () => [...graph.nodes].sort((left, right) => left.label.localeCompare(right.label, 'zh-CN')),
+    [graph.nodes],
+  );
+  const node_matches = useMemo(() => {
+    const keyword = normalize_keyword(node_keyword);
+    if (!keyword) {
+      return searchable_nodes.slice(0, 12);
+    }
+    return searchable_nodes
+      .filter((node) => `${node.label} ${node.type} ${node.id}`.toLowerCase().includes(keyword))
+      .slice(0, 12);
+  }, [node_keyword, searchable_nodes]);
+  const filtered_sources = useMemo(() => {
+    const keyword = normalize_keyword(source_keyword);
+    if (!keyword) {
+      return sources;
+    }
+    return sources.filter((source) =>
+      `${source.name} ${source.summary ?? ''} ${source.source_kind}`.toLowerCase().includes(keyword),
+    );
+  }, [source_keyword, sources]);
+  const left_drawer_mode =
+    active_graph_drawer === 'filters' || active_graph_drawer === 'create-node' || active_graph_drawer === 'relation'
+      ? active_graph_drawer
+      : null;
+  const inspector_open = active_graph_drawer === 'inspector' && graph_inspector_open && Boolean(selected_node_id || selected_edge_id);
+  const selected_node_copy = node_detail ? node_action_copy(node_detail) : null;
+  const selected_edge_copy = edge_detail ? edge_action_copy(edge_detail) : null;
+  const selected_node_rows = useMemo(
+    () => (node_detail ? collect_node_import_rows(node_detail.node.type, node_detail.node.metadata) : []),
+    [node_detail],
+  );
+  const selected_edge_rows = useMemo(
+    () => (edge_detail ? collect_edge_import_rows(edge_detail.edge.metadata) : []),
+    [edge_detail],
+  );
+  const selected_edge_source_label = selected_edge ? node_map.get(selected_edge.source)?.label ?? selected_edge.source : '';
+  const selected_edge_target_label = selected_edge ? node_map.get(selected_edge.target)?.label ?? selected_edge.target : '';
+  const has_focus_target = Boolean(
+    selected_node_id || selected_edge_id || highlighted_node_ids.length || highlighted_edge_ids.length,
+  );
 
   useEffect(() => {
-    if (!selected_node_id) {
-      return;
+    if (node_detail) {
+      set_rename_value(node_detail.node.label);
+      set_graph_controls_open(false);
+      set_graph_inspector_open(true);
+      set_active_graph_drawer('inspector');
     }
-    if (!subject_node_id) {
-      set_subject_node_id(selected_node_id);
-      return;
-    }
-    if (subject_node_id !== selected_node_id && !object_node_id) {
-      set_object_node_id(selected_node_id);
-    }
-  }, [object_node_id, selected_node_id, subject_node_id]);
+  }, [node_detail, set_active_graph_drawer, set_graph_controls_open, set_graph_inspector_open]);
 
   useEffect(() => {
-    if (subject_node_id && !graph.nodes.some((node) => node.id === subject_node_id)) {
-      set_subject_node_id('');
+    if (edge_detail) {
+      set_graph_controls_open(false);
+      set_graph_inspector_open(true);
+      set_active_graph_drawer('inspector');
     }
-    if (object_node_id && !graph.nodes.some((node) => node.id === object_node_id)) {
-      set_object_node_id('');
+  }, [edge_detail, set_active_graph_drawer, set_graph_controls_open, set_graph_inspector_open]);
+
+  useEffect(() => {
+    if (!selected_node_id && !selected_edge_id && active_graph_drawer === 'inspector') {
+      set_graph_inspector_open(false);
+      set_active_graph_drawer(null);
     }
-  }, [graph.nodes, object_node_id, subject_node_id]);
+  }, [active_graph_drawer, selected_edge_id, selected_node_id, set_active_graph_drawer, set_graph_inspector_open]);
+
+  function open_left_drawer(mode: 'filters' | 'create-node' | 'relation'): void {
+    set_graph_controls_open(true);
+    set_graph_inspector_open(false);
+    set_active_graph_drawer(mode);
+  }
+
+  function close_left_drawer(): void {
+    set_graph_controls_open(false);
+    if (left_drawer_mode) {
+      set_active_graph_drawer(null);
+    }
+  }
+
+  function close_inspector(): void {
+    set_graph_inspector_open(false);
+    if (active_graph_drawer === 'inspector') {
+      set_active_graph_drawer(null);
+    }
+  }
+
+  function focus_selected(): void {
+    set_graph_viewport_mode('focus-selection');
+    set_viewport_command(create_viewport_command('focus-selection'));
+  }
+
+  function fit_all(): void {
+    set_graph_viewport_mode('fit-all');
+    set_viewport_command(create_viewport_command('fit-all'));
+  }
+
+  function handle_select_node(node_id: string): void {
+    select_node(node_id);
+    set_graph_controls_open(false);
+    set_graph_inspector_open(true);
+    set_active_graph_drawer('inspector');
+    focus_selected();
+  }
+
+  function handle_select_edge(edge_id: string): void {
+    select_edge(edge_id);
+    set_graph_controls_open(false);
+    set_graph_inspector_open(true);
+    set_active_graph_drawer('inspector');
+    focus_selected();
+  }
+
+  function handle_clear_selection(): void {
+    clear_graph_selection();
+    close_inspector();
+  }
+
+  function handle_clear_all(): void {
+    set_node_keyword('');
+    clear_graph_selection();
+    clear_highlights();
+    fit_all();
+  }
+
+  async function handle_refresh_graph(): Promise<void> {
+    set_graph_viewport_mode('fit-all');
+    await refresh_graph();
+    set_viewport_command(create_viewport_command('fit-all'));
+  }
+
+  function handle_apply_search(event: FormEvent<HTMLFormElement>): void {
+    event.preventDefault();
+    const first_match = node_matches[0];
+    if (first_match) {
+      handle_select_node(first_match.id);
+    }
+  }
+
+  function handle_toggle_source(source_id: string): void {
+    set_selected_source_ids((current) =>
+      current.includes(source_id) ? current.filter((item) => item !== source_id) : [...current, source_id],
+    );
+  }
+
+  async function handle_create_entity(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const label = create_label.trim();
+    if (!label) {
+      return;
+    }
+    await create_entity(label, {
+      description: create_description.trim() || undefined,
+      metadata: create_description.trim() ? { description: create_description.trim() } : undefined,
+    });
+    set_create_label('');
+    set_create_description('');
+  }
+
+  async function handle_create_relation(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const { subject_node_id, predicate, object_node_id, weight } = relation_draft;
+    if (!subject_node_id || !object_node_id || !predicate.trim() || subject_node_id === object_node_id) {
+      return;
+    }
+    await create_relation(subject_node_id, predicate.trim(), object_node_id, weight);
+    set_relation_draft((current) => ({
+      ...current,
+      predicate: current.predicate.trim() || DEFAULT_PREDICATE,
+      object_node_id: '',
+    }));
+  }
+
+  async function handle_rename_node(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    if (!node_detail) {
+      return;
+    }
+    const next_label = rename_value.trim();
+    if (!next_label || next_label === node_detail.node.label) {
+      return;
+    }
+    await rename_node(node_detail.node.id, next_label);
+  }
+
+  async function handle_delete_selected_node(): Promise<void> {
+    if (!node_detail || !selected_node_copy?.delete_allowed || !window.confirm(selected_node_copy.delete_message)) {
+      return;
+    }
+    await delete_node(node_detail.node.id);
+    close_inspector();
+    fit_all();
+  }
+
+  async function handle_delete_selected_edge(): Promise<void> {
+    if (!edge_detail || !selected_edge_copy?.delete_allowed || !window.confirm(selected_edge_copy.delete_message)) {
+      return;
+    }
+    await delete_edge(edge_detail.edge.id);
+    close_inspector();
+    fit_all();
+  }
+
+  function assign_relation_endpoint(role: 'subject' | 'object', node_id?: string): void {
+    const next_node_id = node_id ?? selected_node_id ?? '';
+    const node = next_node_id ? node_map.get(next_node_id) ?? null : null;
+    if (!is_entity_node(node)) {
+      return;
+    }
+    open_left_drawer('relation');
+    set_relation_draft((current) => ({
+      ...current,
+      subject_node_id: role === 'subject' ? next_node_id : current.subject_node_id,
+      object_node_id: role === 'object' ? next_node_id : current.object_node_id,
+    }));
+  }
+
+  function start_relation_from_current_node(): void {
+    if (!is_entity_node(selected_node)) {
+      return;
+    }
+    open_left_drawer('relation');
+    set_relation_draft((current) => ({
+      ...current,
+      subject_node_id: current.subject_node_id || selected_node.id,
+    }));
+  }
+
+  function copy_edge_to_relation_form(): void {
+    if (!edge_detail) {
+      return;
+    }
+    const subject_node = node_map.get(edge_detail.edge.source) ?? null;
+    const object_node = node_map.get(edge_detail.edge.target) ?? null;
+    if (!is_entity_node(subject_node) || !is_entity_node(object_node)) {
+      return;
+    }
+    open_left_drawer('relation');
+    set_relation_draft({
+      subject_node_id: edge_detail.edge.source,
+      predicate: edge_detail.edge.label || edge_detail.edge.type || DEFAULT_PREDICATE,
+      object_node_id: edge_detail.edge.target,
+      weight: edge_detail.edge.weight || 0.9,
+    });
+  }
+
+  function relayout_graph(): void {
+    set_layout_revision((current) => current + 1);
+    fit_all();
+  }
 
   return (
-    <section className='kb-panel kb-graph-panel'>
-      <header className='kb-section-header'>
-        <div>
-          <h2>图谱浏览</h2>
-          <p>把图谱页收成三栏工作区，左边控制范围，中间专注看图，右边查看详情和维护手动关系。</p>
-        </div>
-      </header>
-
-      <div className='kb-graph-shell'>
-        <aside className='kb-graph-rail'>
-          <div className='kb-detail-card'>
-            <span className='kb-context-label'>Graph Filters</span>
-            <h3>显示范围</h3>
-            <p>{`当前来源：${selected_source_summary(selected_source_ids, sources)}`}</p>
-
-            <label className='kb-form-field'>
-              <span>筛选来源</span>
-              <input
-                onChange={(event) => set_source_filter_text(event.target.value)}
-                placeholder='按名称、摘要或类型过滤'
-                type='search'
-                value={source_filter_text}
-              />
-            </label>
-
-            <label className='kb-form-field'>
-              <span>来源选择</span>
-              <select
-                className='kb-graph-source-select'
-                multiple
-                onChange={(event) =>
-                  set_selected_source_ids(Array.from(event.target.selectedOptions).map((option) => option.value))
-                }
-                size={Math.min(Math.max(filtered_sources.length, 6), 10)}
-                value={selected_source_ids}
-              >
-                {filtered_sources.map((source) => (
-                  <option key={source.id} value={source.id}>
-                    {source.name}
-                  </option>
-                ))}
-              </select>
-              <span className='kb-helper-text'>按住 Ctrl 或 Command 可以多选；不选时默认显示全部来源。</span>
-            </label>
-
-            <div className='kb-meta-strip'>
-              <span className='kb-meta-pill'>{`来源 ${sources.length}`}</span>
-              <span className='kb-meta-pill'>{`匹配 ${filtered_sources.length}`}</span>
-              <span className='kb-meta-pill'>{selected_source_ids.length ? `已选 ${selected_source_ids.length}` : '显示全部'}</span>
-            </div>
+    <section className='kb-panel kb-graph-page'>
+      <section className='kb-graph-toolbar'>
+        <div className='kb-graph-toolbar-row'>
+          <div className='kb-graph-toolbar-copy'>
+            <span className='kb-context-label'>Knowledge Graph</span>
+            <strong>图谱工作台</strong>
+            <span className='kb-helper-text'>搜索、筛选、手动编辑和图谱浏览都收进同一个桌面工作区。</span>
           </div>
 
-          <div className='kb-detail-card'>
-            <span className='kb-context-label'>Graph Controls</span>
-            <h3>图谱控制</h3>
-
-            <label className='kb-form-field'>
-              <span>图谱密度</span>
-              <input
-                max={100}
-                min={5}
-                onChange={(event) => set_density(Number(event.target.value))}
-                type='range'
-                value={density}
-              />
-              <strong>{density}%</strong>
-            </label>
-
-            <label className='kb-check-field'>
-              <input
-                checked={include_paragraphs}
-                onChange={(event) => set_include_paragraphs(event.target.checked)}
-                type='checkbox'
-              />
-              <span>显示段落节点</span>
-            </label>
-
-            <div className='kb-button-row'>
-              <button className='kb-secondary-button' onClick={() => set_selected_source_ids([])} type='button'>
-                显示全部来源
-              </button>
-              <button className='kb-secondary-button' onClick={clear_highlights} type='button'>
-                清空高亮
-              </button>
-              <button className='kb-secondary-button' onClick={clear_graph_selection} type='button'>
-                清空选择
-              </button>
-            </div>
-          </div>
-
-          <div className='kb-detail-card'>
-            <span className='kb-context-label'>Manual Relation</span>
-            <h3>创建手动关系</h3>
-            <p>用当前选中的节点快速补充图谱里的人工关系。</p>
-
-            <label className='kb-form-field'>
-              <span>起点节点</span>
-              <select onChange={(event) => set_subject_node_id(event.target.value)} value={subject_node_id}>
-                <option value=''>选择起点节点</option>
-                {relation_node_options.map((node) => (
-                  <option key={node.id} value={node.id}>
-                    {node_option_label(node.id, graph)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className='kb-form-field'>
-              <span>关系模板</span>
-              <select
-                onChange={(event) => {
-                  if (event.target.value !== '__custom__') {
-                    set_predicate(event.target.value);
-                  }
-                }}
-                value={predicate_template_value}
-              >
-                {PREDICATE_SUGGESTIONS.map((item) => (
-                  <option key={item} value={item}>
-                    {item}
-                  </option>
-                ))}
-                <option value='__custom__'>自定义输入</option>
-              </select>
-            </label>
-
-            <label className='kb-form-field'>
-              <span>关系名称</span>
-              <input onChange={(event) => set_predicate(event.target.value)} type='text' value={predicate} />
-            </label>
-
-            <label className='kb-form-field'>
-              <span>终点节点</span>
-              <select onChange={(event) => set_object_node_id(event.target.value)} value={object_node_id}>
-                <option value=''>选择终点节点</option>
-                {relation_node_options.map((node) => (
-                  <option key={node.id} value={node.id}>
-                    {node_option_label(node.id, graph)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className='kb-form-field'>
-              <span>权重</span>
-              <input
-                max={5}
-                min={0.1}
-                onChange={(event) => {
-                  const next_weight = Number(event.target.value);
-                  set_weight(Number.isFinite(next_weight) ? next_weight : 1);
-                }}
-                step={0.1}
-                type='number'
-                value={weight}
-              />
-            </label>
-
-            <div className='kb-button-row'>
-              <button
-                className='kb-secondary-button'
-                disabled={!selected_node_id}
-                onClick={() => {
-                  if (selected_node_id) {
-                    set_subject_node_id(selected_node_id);
-                  }
-                }}
-                type='button'
-              >
-                当前节点设为起点
-              </button>
-              <button
-                className='kb-secondary-button'
-                disabled={!selected_node_id}
-                onClick={() => {
-                  if (selected_node_id) {
-                    set_object_node_id(selected_node_id);
-                  }
-                }}
-                type='button'
-              >
-                当前节点设为终点
-              </button>
-            </div>
-
-            <button
-              className='kb-primary-button'
-              disabled={
-                is_creating_manual_relation ||
-                !subject_node_id.trim() ||
-                !predicate.trim() ||
-                !object_node_id.trim() ||
-                subject_node_id === object_node_id
-              }
-              onClick={() => void create_relation(subject_node_id, predicate.trim(), object_node_id, weight)}
-              type='button'
-            >
-              {is_creating_manual_relation ? '创建中...' : '创建手动关系'}
+          <div className='kb-button-row'>
+            <button className='kb-secondary-button' onClick={() => open_left_drawer('filters')} type='button'>
+              筛选与显示
+            </button>
+            <button className='kb-secondary-button' onClick={() => open_left_drawer('create-node')} type='button'>
+              新建实体
+            </button>
+            <button className='kb-secondary-button' onClick={() => open_left_drawer('relation')} type='button'>
+              补关系
             </button>
           </div>
-        </aside>
-
-        <div className='kb-graph-main'>
-          <div className='kb-detail-card kb-graph-stage'>
-            <div className='kb-graph-hero'>
-              <span className='kb-context-label'>Graph View</span>
-              <h3>{focus_label}</h3>
-              <p>中间保留给图本身。筛选、选择、高亮和手动关系都围绕这块画布展开。</p>
-
-              <div className='kb-meta-strip'>
-                <span className='kb-meta-pill'>{`节点 ${graph.nodes.length}`}</span>
-                <span className='kb-meta-pill'>{`关系 ${graph.edges.length}`}</span>
-                <span className='kb-meta-pill'>{`高亮节点 ${highlighted_node_ids.length}`}</span>
-                <span className='kb-meta-pill'>{`高亮关系 ${highlighted_edge_ids.length}`}</span>
-                <span className='kb-meta-pill'>{is_graph_loading ? '图谱刷新中...' : '图谱已就绪'}</span>
-              </div>
-            </div>
-
-            <KnowledgeGraphCanvas
-              edges={graph.edges}
-              highlighted_edge_ids={highlighted_edge_ids}
-              highlighted_node_ids={highlighted_node_ids}
-              nodes={graph.nodes}
-              on_clear_selection={clear_graph_selection}
-              on_select_edge={select_edge}
-              on_select_node={select_node}
-              resolved_theme={resolved_theme}
-              selected_edge_id={selected_edge_id}
-              selected_node_id={selected_node_id}
-            />
-
-            <div className='kb-legend-row'>
-              <span className='kb-legend-item'>来源节点</span>
-              <span className='kb-legend-item'>段落节点</span>
-              <span className='kb-legend-item'>实体节点</span>
-              <span className='kb-legend-item'>关系连线</span>
-            </div>
-          </div>
         </div>
 
-        <aside className='kb-graph-detail-rail'>
-          <div className='kb-detail-card'>
-            <span className='kb-context-label'>Selection</span>
-            <h3>{node_detail?.node.label ?? edge_detail?.edge.label ?? '当前详情'}</h3>
-            <p>
-              {node_detail
-                ? NODE_TYPE_LABELS[node_detail.node.type] ?? node_detail.node.type
-                : edge_detail
-                  ? edge_detail.edge.type
-                  : '点击图谱中的节点或关系后，这里会显示详情。'}
-            </p>
-
-            {node_detail ? (
-              <>
-                <div className='kb-meta-strip'>
-                  <span className='kb-meta-pill'>{`段落 ${node_detail.paragraphs.length}`}</span>
-                  <span className='kb-meta-pill'>{`关系 ${node_detail.relations.length}`}</span>
-                </div>
-
-                <div className='kb-button-row'>
-                  <button className='kb-secondary-button' onClick={() => set_subject_node_id(node_detail.node.id)} type='button'>
-                    设为起点
-                  </button>
-                  <button className='kb-secondary-button' onClick={() => set_object_node_id(node_detail.node.id)} type='button'>
-                    设为终点
-                  </button>
-                </div>
-
-                <MetadataRows rows={node_import_rows} />
-
-                {Object.keys(node_detail.node.metadata).length ? (
-                  <pre>{JSON.stringify(node_detail.node.metadata, null, 2)}</pre>
-                ) : null}
-              </>
-            ) : null}
-
-            {edge_detail ? (
-              <>
-                <MetadataRows rows={edge_import_rows} />
-                {Object.keys(edge_detail.edge.metadata).length ? (
-                  <pre>{JSON.stringify(edge_detail.edge.metadata, null, 2)}</pre>
-                ) : null}
-              </>
-            ) : null}
-
-            {!node_detail && !edge_detail ? <div className='kb-empty-card'>还没有选中对象。</div> : null}
-          </div>
-
-          <div className='kb-detail-card'>
-            <span className='kb-context-label'>Manual Relations</span>
-            <h3>手动关系</h3>
-            <p>这里展示当前已补充到图谱中的手动关系。</p>
-
-            <div className='kb-meta-strip'>
-              <span className='kb-meta-pill'>{`总数 ${manual_relations.length}`}</span>
-            </div>
-
-            <div className='kb-relation-list'>
-              {manual_relations.map((relation) => (
-                <div className='kb-inline-card' key={relation.id}>
-                  <strong>{relation.predicate}</strong>
-                  <span>{`${node_option_label(relation.subject_node_id, graph)} -> ${node_option_label(relation.object_node_id, graph)}`}</span>
-                  <span>{`权重 ${relation.weight.toFixed(1)}`}</span>
-                  <button className='kb-secondary-button' onClick={() => void remove_manual_relation(relation.id)} type='button'>
-                    删除
-                  </button>
-                </div>
+        <div className='kb-graph-toolbar-row is-controls'>
+          <form className='kb-graph-search-form' onSubmit={handle_apply_search}>
+            <label className='kb-form-field'>
+              <span>节点搜索</span>
+              <input
+                list='kb-graph-node-search'
+                onChange={(event) => set_node_keyword(event.target.value)}
+                placeholder='输入节点名称、类型或 ID'
+                value={node_keyword}
+              />
+            </label>
+            <datalist id='kb-graph-node-search'>
+              {node_matches.map((node) => (
+                <option key={node.id} value={node.label}>
+                  {node_option_label(node.id, graph)}
+                </option>
               ))}
-              {!manual_relations.length ? <div className='kb-empty-card'>当前还没有手动关系。</div> : null}
-            </div>
+            </datalist>
+            <button className='kb-secondary-button' type='submit'>
+              定位
+            </button>
+          </form>
+
+          <div className='kb-graph-toolbar-actions'>
+            <button className='kb-secondary-button' onClick={() => void handle_refresh_graph()} type='button'>
+              刷新图谱
+            </button>
+            <button className='kb-secondary-button' onClick={fit_all} type='button'>
+              适配全图
+            </button>
+            <button
+              className='kb-secondary-button'
+              disabled={!has_focus_target}
+              onClick={focus_selected}
+              type='button'
+            >
+              聚焦选中
+            </button>
+            <button className='kb-secondary-button' onClick={() => set_viewport_command(create_viewport_command('zoom-in'))} type='button'>
+              放大
+            </button>
+            <button className='kb-secondary-button' onClick={() => set_viewport_command(create_viewport_command('zoom-out'))} type='button'>
+              缩小
+            </button>
+            <button className='kb-secondary-button' onClick={relayout_graph} type='button'>
+              重新布局
+            </button>
+            <button className='kb-secondary-button' onClick={handle_clear_all} type='button'>
+              一键清空
+            </button>
           </div>
-        </aside>
-      </div>
+        </div>
+      </section>
+
+      {graph_error_message ? <div className='kb-graph-error-banner'>{graph_error_message}</div> : null}
+
+      <section className='kb-graph-stage'>
+        <KnowledgeGraphCanvas
+          edges={graph.edges}
+          highlighted_edge_ids={highlighted_edge_ids}
+          highlighted_node_ids={highlighted_node_ids}
+          layout_revision={layout_revision}
+          nodes={graph.nodes}
+          on_clear_selection={handle_clear_selection}
+          on_select_edge={handle_select_edge}
+          on_select_node={handle_select_node}
+          resolved_theme={resolved_theme}
+          selected_edge_id={selected_edge_id}
+          selected_node_id={selected_node_id}
+          viewport_command={viewport_command}
+          viewport_mode={graph_viewport_mode}
+        />
+
+        <div className='kb-graph-stage-badges'>
+          <span className='kb-meta-pill'>{source_scope_label}</span>
+          <span className='kb-meta-pill'>{`节点 ${graph.nodes.length}`}</span>
+          <span className='kb-meta-pill'>{`关系 ${graph.edges.length}`}</span>
+          <span className='kb-meta-pill'>{include_paragraphs ? '显示段落' : '隐藏段落'}</span>
+          <span className='kb-meta-pill'>{GRAPH_VIEWPORT_MODE_LABELS[graph_viewport_mode]}</span>
+        </div>
+
+        <div className='kb-graph-stage-legend'>
+          <span className='kb-graph-legend-item'>
+            <i className='is-source' />
+            来源节点
+          </span>
+          <span className='kb-graph-legend-item'>
+            <i className='is-paragraph' />
+            段落节点
+          </span>
+          <span className='kb-graph-legend-item'>
+            <i className='is-entity' />
+            实体节点
+          </span>
+          <span className='kb-graph-legend-item'>
+            <i className='is-edge' />
+            关系边
+          </span>
+        </div>
+
+        {is_graph_loading ? <div className='kb-graph-loading'>正在刷新图谱...</div> : null}
+
+        {left_drawer_mode && graph_controls_open ? (
+          <aside className='kb-graph-drawer kb-graph-drawer-left'>
+            <div className='kb-graph-drawer-card'>
+              {left_drawer_mode === 'filters' ? (
+                <>
+                  <div className='kb-graph-drawer-head'>
+                    <div>
+                      <span className='kb-context-label'>Filters</span>
+                      <h3>来源与显示</h3>
+                      <p>{source_scope_label}</p>
+                    </div>
+                    <button className='kb-secondary-button' onClick={close_left_drawer} type='button'>
+                      关闭
+                    </button>
+                  </div>
+
+                  <label className='kb-form-field'>
+                    <span>来源搜索</span>
+                    <input
+                      onChange={(event) => set_source_keyword(event.target.value)}
+                      placeholder='按名称、摘要或类型搜索'
+                      value={source_keyword}
+                    />
+                  </label>
+
+                  <div className='kb-graph-source-list'>
+                    {filtered_sources.map((source) => (
+                      <label className='kb-graph-source-option' key={source.id}>
+                        <input checked={selected_source_ids.includes(source.id)} onChange={() => handle_toggle_source(source.id)} type='checkbox' />
+                        <div>
+                          <strong>{source.name}</strong>
+                          <span>{source.summary || source.source_kind}</span>
+                        </div>
+                      </label>
+                    ))}
+                    {!filtered_sources.length ? <div className='kb-helper-text'>没有匹配的来源。</div> : null}
+                  </div>
+
+                  <label className='kb-check-field'>
+                    <input checked={include_paragraphs} onChange={(event) => set_include_paragraphs(event.target.checked)} type='checkbox' />
+                    <span>显示段落节点</span>
+                  </label>
+
+                  <label className='kb-form-field'>
+                    <span>{`图谱密度 ${density}%`}</span>
+                    <input max={100} min={12} onChange={(event) => set_density(Number(event.target.value))} type='range' value={density} />
+                  </label>
+
+                  <div className='kb-button-row'>
+                    {DENSITY_PRESETS.map((value) => (
+                      <button className='kb-chip' key={value} onClick={() => set_density(value)} type='button'>
+                        {`${value}%`}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className='kb-button-row'>
+                    <button className='kb-secondary-button' onClick={clear_source_filters} type='button'>
+                      清空来源
+                    </button>
+                    <button className='kb-secondary-button' onClick={reset_graph_filters} type='button'>
+                      重置筛选
+                    </button>
+                  </div>
+                </>
+              ) : null}
+
+              {left_drawer_mode === 'create-node' ? (
+                <form className='kb-graph-form' onSubmit={(event) => void handle_create_entity(event)}>
+                  <div className='kb-graph-drawer-head'>
+                    <div>
+                      <span className='kb-context-label'>Create Node</span>
+                      <h3>新建手工实体</h3>
+                      <p>创建后会自动选中该实体，并可继续在右侧详情抽屉里编辑。</p>
+                    </div>
+                    <button className='kb-secondary-button' onClick={close_left_drawer} type='button'>
+                      关闭
+                    </button>
+                  </div>
+
+                  <label className='kb-form-field'>
+                    <span>实体名称</span>
+                    <input onChange={(event) => set_create_label(event.target.value)} placeholder='例如：项目 Alpha' value={create_label} />
+                  </label>
+
+                  <label className='kb-form-field'>
+                    <span>描述</span>
+                    <textarea
+                      onChange={(event) => set_create_description(event.target.value)}
+                      placeholder='补充实体说明，创建后会写入节点元数据。'
+                      value={create_description}
+                    />
+                  </label>
+
+                  <div className='kb-button-row'>
+                    <button className='kb-primary-button' disabled={is_creating_node || !create_label.trim()} type='submit'>
+                      {is_creating_node ? '创建中...' : '创建实体'}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+
+              {left_drawer_mode === 'relation' ? (
+                <form className='kb-graph-form' onSubmit={(event) => void handle_create_relation(event)}>
+                  <div className='kb-graph-drawer-head'>
+                    <div>
+                      <span className='kb-context-label'>Create Relation</span>
+                      <h3>补关系</h3>
+                      <p>手动补边仅允许实体与实体之间建立关系。</p>
+                    </div>
+                    <button className='kb-secondary-button' onClick={close_left_drawer} type='button'>
+                      关闭
+                    </button>
+                  </div>
+
+                  {is_entity_node(selected_node) ? (
+                    <div className='kb-button-row'>
+                      <button className='kb-chip' onClick={() => assign_relation_endpoint('subject', selected_node.id)} type='button'>
+                        用当前选中作为起点
+                      </button>
+                      <button className='kb-chip' onClick={() => assign_relation_endpoint('object', selected_node.id)} type='button'>
+                        用当前选中作为终点
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <label className='kb-form-field'>
+                    <span>起点实体</span>
+                    <select
+                      onChange={(event) => set_relation_draft((current) => ({ ...current, subject_node_id: event.target.value }))}
+                      value={relation_draft.subject_node_id}
+                    >
+                      <option value=''>请选择起点实体</option>
+                      {relation_node_options.map((node) => (
+                        <option key={node.id} value={node.id}>
+                          {node_option_label(node.id, graph)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className='kb-form-field'>
+                    <span>关系谓词</span>
+                    <input
+                      list='kb-graph-predicate-options'
+                      onChange={(event) => set_relation_draft((current) => ({ ...current, predicate: event.target.value }))}
+                      placeholder='例如：依赖 / 归属 / 引用'
+                      value={relation_draft.predicate}
+                    />
+                    <datalist id='kb-graph-predicate-options'>
+                      {PREDICATE_SUGGESTIONS.map((predicate) => (
+                        <option key={predicate} value={predicate} />
+                      ))}
+                    </datalist>
+                  </label>
+
+                  <label className='kb-form-field'>
+                    <span>终点实体</span>
+                    <select
+                      onChange={(event) => set_relation_draft((current) => ({ ...current, object_node_id: event.target.value }))}
+                      value={relation_draft.object_node_id}
+                    >
+                      <option value=''>请选择终点实体</option>
+                      {relation_node_options.map((node) => (
+                        <option key={node.id} value={node.id}>
+                          {node_option_label(node.id, graph)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className='kb-form-field'>
+                    <span>{`关系权重 ${relation_draft.weight.toFixed(2)}`}</span>
+                    <input
+                      max={1}
+                      min={0.1}
+                      onChange={(event) => set_relation_draft((current) => ({ ...current, weight: Number(event.target.value) }))}
+                      step={0.05}
+                      type='range'
+                      value={relation_draft.weight}
+                    />
+                  </label>
+
+                  <div className='kb-helper-text'>{`当前共有 ${manual_relations.length} 条手动关系。`}</div>
+
+                  <div className='kb-button-row'>
+                    <button
+                      className='kb-primary-button'
+                      disabled={
+                        is_creating_manual_relation ||
+                        !relation_draft.subject_node_id ||
+                        !relation_draft.object_node_id ||
+                        !relation_draft.predicate.trim() ||
+                        relation_draft.subject_node_id === relation_draft.object_node_id
+                      }
+                      type='submit'
+                    >
+                      {is_creating_manual_relation ? '提交中...' : '创建关系'}
+                    </button>
+                  </div>
+                </form>
+              ) : null}
+            </div>
+          </aside>
+        ) : null}
+
+        {inspector_open ? (
+          <aside className='kb-graph-drawer kb-graph-drawer-right'>
+            <div className='kb-graph-drawer-card'>
+              {!node_detail && !edge_detail ? (
+                <div className='kb-graph-drawer-loading'>
+                  <span className='kb-context-label'>Inspector</span>
+                  <strong>正在加载详情...</strong>
+                  <span className='kb-helper-text'>详情面板会根据当前选中的节点或边自动切换。</span>
+                </div>
+              ) : null}
+
+              {node_detail ? (
+                <div className='kb-graph-inspector-content'>
+                  <div className='kb-graph-drawer-head'>
+                    <div>
+                      <span className='kb-context-label'>Inspector</span>
+                      <h3>{node_detail.node.label}</h3>
+                      <p>{NODE_TYPE_LABELS[node_detail.node.type] ?? node_detail.node.type}</p>
+                    </div>
+                    <button className='kb-secondary-button' onClick={close_inspector} type='button'>
+                      关闭
+                    </button>
+                  </div>
+
+                  <div className='kb-meta-strip'>
+                    <span className='kb-meta-pill'>{`段落 ${node_detail.paragraphs.length}`}</span>
+                    <span className='kb-meta-pill'>{`关系 ${node_detail.relations.length}`}</span>
+                  </div>
+
+                  {selected_node_copy?.rename_allowed ? (
+                    <form className='kb-graph-inline-form' onSubmit={(event) => void handle_rename_node(event)}>
+                      <input onChange={(event) => set_rename_value(event.target.value)} value={rename_value} />
+                      <button className='kb-secondary-button' disabled={is_renaming_node || !rename_value.trim()} type='submit'>
+                        {is_renaming_node ? '保存中...' : '重命名'}
+                      </button>
+                    </form>
+                  ) : null}
+
+                  <div className='kb-button-row'>
+                    {selected_node_copy?.relation_allowed ? (
+                      <>
+                        <button className='kb-secondary-button' onClick={() => assign_relation_endpoint('subject')} type='button'>
+                          设为起点
+                        </button>
+                        <button className='kb-secondary-button' onClick={() => assign_relation_endpoint('object')} type='button'>
+                          设为终点
+                        </button>
+                        <button className='kb-secondary-button' onClick={start_relation_from_current_node} type='button'>
+                          从当前节点补关系
+                        </button>
+                      </>
+                    ) : null}
+
+                    <button className='kb-secondary-button' onClick={focus_selected} type='button'>
+                      聚焦节点
+                    </button>
+                    <button className='kb-secondary-button' onClick={clear_highlights} type='button'>
+                      清空高亮
+                    </button>
+                    <button className='kb-secondary-button' onClick={handle_clear_selection} type='button'>
+                      清空选择
+                    </button>
+
+                    {selected_node_copy?.delete_allowed ? (
+                      <button
+                        className='kb-secondary-button is-danger'
+                        disabled={is_deleting_node}
+                        onClick={() => void handle_delete_selected_node()}
+                        type='button'
+                      >
+                        {is_deleting_node ? '删除中...' : selected_node_copy.delete_label}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {!selected_node_copy?.rename_allowed && !selected_node_copy?.delete_allowed && !selected_node_copy?.relation_allowed ? (
+                    <div className='kb-helper-text'>该节点当前仅支持查看详情，不支持手动编辑。</div>
+                  ) : null}
+
+                  <MetadataRows rows={selected_node_rows} />
+                  <JsonDetails title='节点元数据' value={node_detail.node.metadata} />
+                  {node_detail.source ? <JsonDetails title='来源信息' value={node_detail.source} /> : null}
+                  {node_detail.paragraphs.length ? <JsonDetails title='关联段落' value={{ paragraphs: node_detail.paragraphs }} /> : null}
+                  {node_detail.relations.length ? <JsonDetails title='关联关系' value={{ relations: node_detail.relations }} /> : null}
+                </div>
+              ) : null}
+
+              {edge_detail ? (
+                <div className='kb-graph-inspector-content'>
+                  <div className='kb-graph-drawer-head'>
+                    <div>
+                      <span className='kb-context-label'>Inspector</span>
+                      <h3>{edge_detail.edge.label}</h3>
+                      <p>{edge_detail.edge.type}</p>
+                    </div>
+                    <button className='kb-secondary-button' onClick={close_inspector} type='button'>
+                      关闭
+                    </button>
+                  </div>
+
+                  <div className='kb-meta-strip'>
+                    <span className='kb-meta-pill'>{`起点 ${selected_edge_source_label}`}</span>
+                    <span className='kb-meta-pill'>{`终点 ${selected_edge_target_label}`}</span>
+                    <span className='kb-meta-pill'>{`权重 ${edge_detail.edge.weight}`}</span>
+                  </div>
+
+                  <div className='kb-button-row'>
+                    <button className='kb-secondary-button' onClick={focus_selected} type='button'>
+                      聚焦两端节点
+                    </button>
+                    {selected_edge_copy?.copy_allowed ? (
+                      <button className='kb-secondary-button' onClick={copy_edge_to_relation_form} type='button'>
+                        复制到补关系表单
+                      </button>
+                    ) : null}
+                    {selected_edge_copy?.delete_allowed ? (
+                      <button
+                        className='kb-secondary-button is-danger'
+                        disabled={is_deleting_edge}
+                        onClick={() => void handle_delete_selected_edge()}
+                        type='button'
+                      >
+                        {is_deleting_edge ? '删除中...' : '删除关系'}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {!selected_edge_copy?.delete_allowed && !selected_edge_copy?.copy_allowed ? (
+                    <div className='kb-helper-text'>结构关系当前仅支持查看详情，不支持手动删除。</div>
+                  ) : null}
+
+                  <MetadataRows rows={selected_edge_rows} />
+                  <JsonDetails title='关系元数据' value={edge_detail.edge.metadata} />
+                  {edge_detail.source ? <JsonDetails title='来源信息' value={edge_detail.source} /> : null}
+                  {edge_detail.paragraph ? <JsonDetails title='段落信息' value={edge_detail.paragraph} /> : null}
+                </div>
+              ) : null}
+            </div>
+          </aside>
+        ) : null}
+      </section>
     </section>
   );
 }

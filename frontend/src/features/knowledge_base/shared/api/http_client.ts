@@ -2,6 +2,18 @@
  * Shared HTTP helpers for the knowledge-base frontend.
  */
 
+export class ApiRequestError extends Error {
+  code: string;
+  status: number;
+
+  constructor(message: string, options: { code: string; status: number }) {
+    super(message);
+    this.name = 'ApiRequestError';
+    this.code = options.code;
+    this.status = options.status;
+  }
+}
+
 export function build_query_string(
   params: Record<string, string | number | boolean | string[] | undefined>,
 ): string {
@@ -23,15 +35,35 @@ export function build_query_string(
 export async function request_json<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   if (!response.ok) {
-    const content_type: string = response.headers.get('content-type') ?? '';
-    if (content_type.includes('application/json')) {
-      const payload = (await response.json().catch(() => null)) as
-        | { detail?: string; message?: string }
-        | null;
-      throw new Error(payload?.detail || payload?.message || `璇锋眰澶辫触 (${response.status})`);
-    }
-    const text = (await response.text()).trim();
-    throw new Error(text || `璇锋眰澶辫触 (${response.status})`);
+    throw await build_request_error(response);
   }
   return (await response.json()) as T;
+}
+
+async function build_request_error(response: Response): Promise<ApiRequestError> {
+  const content_type: string = response.headers.get('content-type') ?? '';
+
+  if (content_type.includes('application/json')) {
+    const payload = (await response.json().catch(() => null)) as
+      | { code?: string; message?: string; detail?: string | { code?: string; message?: string } }
+      | null;
+
+    const nested_detail =
+      payload?.detail && typeof payload.detail === 'object' && !Array.isArray(payload.detail)
+        ? payload.detail
+        : null;
+    const message =
+      payload?.message ||
+      (typeof payload?.detail === 'string' ? payload.detail : undefined) ||
+      nested_detail?.message ||
+      `请求失败 (${response.status})`;
+    const code = payload?.code || nested_detail?.code || `http_${response.status}`;
+    return new ApiRequestError(message, { code, status: response.status });
+  }
+
+  const text = (await response.text()).trim();
+  return new ApiRequestError(text || `请求失败 (${response.status})`, {
+    code: `http_${response.status}`,
+    status: response.status,
+  });
 }

@@ -5,6 +5,7 @@
 import type {
   GraphEdgeDetailRecord,
   GraphNodeDetailRecord,
+  KnowledgeGraphNodeRecord,
   KnowledgeGraphRecord,
   ManualRelationRecord,
 } from '../types/knowledge_base_types';
@@ -26,12 +27,44 @@ export function fetch_graph(options: GraphQueryOptions): Promise<KnowledgeGraphR
   );
 }
 
+export function create_graph_node(payload: {
+  label: string;
+  description?: string;
+  metadata?: Record<string, unknown>;
+}): Promise<KnowledgeGraphNodeRecord> {
+  return request_json<KnowledgeGraphNodeRecord>('/api/kb/graph/nodes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function get_graph_node_detail(node_id: string): Promise<GraphNodeDetailRecord> {
   return request_json<GraphNodeDetailRecord>(`/api/kb/graph/nodes/${encodeURIComponent(node_id)}`);
 }
 
 export function get_graph_edge_detail(edge_id: string): Promise<GraphEdgeDetailRecord> {
   return request_json<GraphEdgeDetailRecord>(`/api/kb/graph/edges/${encodeURIComponent(edge_id)}`);
+}
+
+export function update_graph_node(node_id: string, payload: { label: string }): Promise<{ status: string }> {
+  return request_json<{ status: string }>(`/api/kb/graph/nodes/${encodeURIComponent(node_id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function delete_graph_node(node_id: string): Promise<{ status: string }> {
+  return request_json<{ status: string }>(`/api/kb/graph/nodes/${encodeURIComponent(node_id)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function delete_graph_edge(edge_id: string): Promise<{ status: string }> {
+  return request_json<{ status: string }>(`/api/kb/graph/edges/${encodeURIComponent(edge_id)}`, {
+    method: 'DELETE',
+  });
 }
 
 export function list_manual_relations(): Promise<ManualRelationRecord[]> {

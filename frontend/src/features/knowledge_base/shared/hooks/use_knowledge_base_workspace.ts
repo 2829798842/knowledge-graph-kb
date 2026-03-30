@@ -1,7 +1,3 @@
-/**
- * Composes the feature-level workspace store modules into the app-facing store.
- */
-
 import { use_graph_workspace_state } from './workspace_store/use_graph_workspace_state';
 import { use_import_workspace_state } from './workspace_store/use_import_workspace_state';
 import { use_model_config_workspace_state } from './workspace_store/use_model_config_workspace_state';
@@ -10,16 +6,19 @@ import { use_source_workspace_state } from './workspace_store/use_source_workspa
 import { use_workspace_focus_actions } from './workspace_store/use_workspace_focus_actions';
 import { use_workspace_ui_state } from './workspace_store/use_workspace_ui_state';
 
-const DEFAULT_GRAPH_DENSITY: number = 88;
+const DEFAULT_GRAPH_DENSITY = 88;
 
 export function use_knowledge_base_workspace_store() {
   const ui = use_workspace_ui_state();
   const source = use_source_workspace_state({
     active_workspace: ui.active_workspace,
+    is_source_library_open: ui.is_source_library_open,
+    set_message: ui.set_message,
     set_error: ui.set_error,
   });
   const model_config = use_model_config_workspace_state({
     active_workspace: ui.active_workspace,
+    is_settings_open: ui.is_settings_open,
     set_message: ui.set_message,
     set_error: ui.set_error,
   });
@@ -34,6 +33,7 @@ export function use_knowledge_base_workspace_store() {
     set_error: ui.set_error,
   });
   const query = use_query_workspace_state({
+    active_workspace: ui.active_workspace,
     query_mode: ui.query_mode,
     selected_source_ids: graph.selected_source_ids,
     set_active_workspace: ui.set_active_workspace,
@@ -46,6 +46,7 @@ export function use_knowledge_base_workspace_store() {
   const focus = use_workspace_focus_actions({
     default_graph_density: DEFAULT_GRAPH_DENSITY,
     set_active_workspace: ui.set_active_workspace,
+    set_is_source_library_open: ui.set_is_source_library_open,
     set_include_paragraphs: graph.set_include_paragraphs,
     set_selected_edge_id: graph.set_selected_edge_id,
     set_selected_node_id: graph.set_selected_node_id,

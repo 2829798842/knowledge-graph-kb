@@ -18,6 +18,7 @@ export function use_query_studio() {
     relation_results: workspace.relation_results,
     source_results: workspace.source_results,
     is_querying: workspace.is_querying,
+    is_loading_answer_sessions: workspace.is_loading_answer_sessions,
     set_query_mode: workspace.set_query_mode,
     execute_query: workspace.execute_query,
     select_answer_session: workspace.select_answer_session,

@@ -80,8 +80,54 @@ class GraphStore:
                     payload["id"],
                 ),
             )
-            connection.commit()
         return self.get_entity(str(payload["id"])) or {}
+
+    def create_entity(
+        self,
+        *,
+        display_name: str,
+        description: str = "",
+        metadata: dict[str, Any] | None = None,
+        appearance_count: int = 0,
+    ) -> dict[str, Any]:
+        canonical_name = normalize_entity_name(display_name)
+        if not canonical_name:
+            raise ValueError("实体名称不能为空。")
+        if self.gateway.fetch_one("SELECT id FROM entities WHERE canonical_name = ?", (canonical_name,)) is not None:
+            raise ValueError("已存在同名实体，请使用其他名称。")
+
+        now = utc_now_iso()
+        payload = {
+            "id": str(uuid4()),
+            "display_name": display_name.strip(),
+            "canonical_name": canonical_name,
+            "description": description.strip(),
+            "appearance_count": max(0, int(appearance_count)),
+            "metadata": metadata or {},
+            "created_at": now,
+            "updated_at": now,
+        }
+        with self.gateway.transaction() as connection:
+            connection.execute(
+                """
+                INSERT INTO entities (
+                    id, display_name, canonical_name, description, appearance_count,
+                    metadata, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    payload["id"],
+                    payload["display_name"],
+                    payload["canonical_name"],
+                    payload["description"],
+                    payload["appearance_count"],
+                    self.gateway.dump_json(payload["metadata"]),
+                    payload["created_at"],
+                    payload["updated_at"],
+                ),
+            )
+        return payload
 
     def create_relation(
         self,
@@ -300,6 +346,76 @@ class GraphStore:
     def get_entity(self, entity_id: str) -> dict[str, Any] | None:
         return self.gateway.fetch_one("SELECT * FROM entities WHERE id = ?", (entity_id,))
 
+    def list_entities(self) -> list[dict[str, Any]]:
+        return self.gateway.fetch_all("SELECT * FROM entities ORDER BY display_name ASC")
+
+    def update_entity(
+        self,
+        entity_id: str,
+        *,
+        display_name: str,
+        description: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
+        row = self.get_entity(entity_id)
+        if row is None:
+            return None
+
+        normalized_name = normalize_entity_name(display_name)
+        if not normalized_name:
+            raise ValueError("实体名称不能为空。")
+
+        with self.gateway.transaction() as connection:
+            duplicate = connection.execute(
+                "SELECT id FROM entities WHERE canonical_name = ? AND id != ?",
+                (normalized_name, entity_id),
+            ).fetchone()
+            if duplicate is not None:
+                raise ValueError("已存在同名实体，请使用其他名称。")
+
+            next_description = row["description"] if description is None else description
+            next_metadata = row["metadata"] if metadata is None else metadata
+            connection.execute(
+                """
+                UPDATE entities
+                SET display_name = ?, canonical_name = ?, description = ?, metadata = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    display_name.strip(),
+                    normalized_name,
+                    next_description,
+                    self.gateway.dump_json(next_metadata),
+                    utc_now_iso(),
+                    entity_id,
+                ),
+            )
+        return self.get_entity(entity_id)
+
+    def set_entity_appearance_count(self, entity_id: str, appearance_count: int) -> dict[str, Any] | None:
+        row = self.get_entity(entity_id)
+        if row is None:
+            return None
+        with self.gateway.transaction() as connection:
+            connection.execute(
+                """
+                UPDATE entities
+                SET appearance_count = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    max(0, int(appearance_count)),
+                    utc_now_iso(),
+                    entity_id,
+                ),
+            )
+        return self.get_entity(entity_id)
+
+    def delete_entity(self, entity_id: str) -> bool:
+        with self.gateway.transaction() as connection:
+            cursor = connection.execute("DELETE FROM entities WHERE id = ?", (entity_id,))
+        return cursor.rowcount > 0
+
     def get_relation(self, relation_id: str) -> dict[str, Any] | None:
         return self.gateway.fetch_one(
             """
@@ -314,6 +430,86 @@ class GraphStore:
             """,
             (relation_id,),
         )
+
+    def delete_relation(self, relation_id: str) -> bool:
+        with self.gateway.transaction() as connection:
+            cursor = connection.execute("DELETE FROM relations WHERE id = ?", (relation_id,))
+        return cursor.rowcount > 0
+
+    def delete_relations(self, relation_ids: list[str]) -> int:
+        if not relation_ids:
+            return 0
+        with self.gateway.transaction() as connection:
+            cursor = connection.execute(
+                f"DELETE FROM relations WHERE id IN ({placeholders(relation_ids)})",
+                tuple(relation_ids),
+            )
+        return cursor.rowcount
+
+    def delete_relations_for_paragraphs(self, paragraph_ids: list[str]) -> int:
+        if not paragraph_ids:
+            return 0
+        with self.gateway.transaction() as connection:
+            cursor = connection.execute(
+                f"""
+                DELETE FROM relations
+                WHERE source_paragraph_id IN ({placeholders(paragraph_ids)})
+                   OR id IN (
+                       SELECT relation_id
+                       FROM paragraph_relations
+                       WHERE paragraph_id IN ({placeholders(paragraph_ids)})
+                   )
+                """,
+                tuple(paragraph_ids + paragraph_ids),
+            )
+        return cursor.rowcount
+
+    def delete_manual_relations_for_node(self, node_id: str) -> int:
+        with self.gateway.transaction() as connection:
+            cursor = connection.execute(
+                """
+                DELETE FROM manual_relations
+                WHERE subject_node_id = ? OR object_node_id = ?
+                """,
+                (node_id, node_id),
+            )
+        return cursor.rowcount
+
+    def delete_manual_relations_for_nodes(self, node_ids: list[str]) -> int:
+        if not node_ids:
+            return 0
+        with self.gateway.transaction() as connection:
+            cursor = connection.execute(
+                f"""
+                DELETE FROM manual_relations
+                WHERE subject_node_id IN ({placeholders(node_ids)})
+                   OR object_node_id IN ({placeholders(node_ids)})
+                """,
+                tuple(node_ids + node_ids),
+            )
+        return cursor.rowcount
+
+    def count_paragraph_links_for_entity(self, entity_id: str) -> int:
+        row = self.gateway.fetch_one(
+            """
+            SELECT COUNT(*) AS paragraph_link_count
+            FROM paragraph_entities
+            WHERE entity_id = ?
+            """,
+            (entity_id,),
+        )
+        return int(row.get("paragraph_link_count") or 0) if row else 0
+
+    def count_relations_for_entity(self, entity_id: str) -> int:
+        row = self.gateway.fetch_one(
+            """
+            SELECT COUNT(*) AS relation_count
+            FROM relations
+            WHERE subject_entity_id = ? OR object_entity_id = ?
+            """,
+            (entity_id, entity_id),
+        )
+        return int(row.get("relation_count") or 0) if row else 0
 
     def list_graph_sources(self, source_ids: list[str] | None = None) -> list[dict[str, Any]]:
         if source_ids:
@@ -376,9 +572,8 @@ class GraphStore:
             )
         return self.gateway.fetch_all(base_sql + " ORDER BY relations.created_at DESC")
 
-    def list_relations_for_source(self, source_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
-        return self.gateway.fetch_all(
-            """
+    def list_relations_for_source(self, source_id: str, *, limit: int | None = 20) -> list[dict[str, Any]]:
+        sql = """
             SELECT
                 relations.*,
                 subject_entity.display_name AS subject_name,
@@ -389,10 +584,14 @@ class GraphStore:
             JOIN paragraphs ON paragraphs.id = relations.source_paragraph_id
             WHERE paragraphs.source_id = ?
             ORDER BY relations.created_at DESC
-            LIMIT ?
-            """,
-            (source_id, limit),
-        )
+        """
+        params: tuple[Any, ...]
+        if limit is None:
+            params = (source_id,)
+        else:
+            sql += "\n            LIMIT ?"
+            params = (source_id, limit)
+        return self.gateway.fetch_all(sql, params)
 
     def list_relations_for_paragraph(self, paragraph_id: str) -> list[dict[str, Any]]:
         return self.gateway.fetch_all(
@@ -410,6 +609,22 @@ class GraphStore:
             """,
             (paragraph_id,),
         )
+
+    def list_relations_referencing_source(self, source_id: str) -> list[dict[str, Any]]:
+        relations = self.list_graph_relations()
+        result: list[dict[str, Any]] = []
+        for relation in relations:
+            metadata = dict(relation.get("metadata") or {})
+            if str(metadata.get("source_id") or "").strip() == source_id:
+                result.append(relation)
+                continue
+            source_paragraph_id = str(relation.get("source_paragraph_id") or "").strip()
+            if not source_paragraph_id:
+                continue
+            paragraph = self.gateway.fetch_one("SELECT source_id FROM paragraphs WHERE id = ?", (source_paragraph_id,))
+            if paragraph is not None and str(paragraph.get("source_id") or "") == source_id:
+                result.append(relation)
+        return result
 
     def list_relations_for_entity(self, entity_id: str, *, limit: int = 24) -> list[dict[str, Any]]:
         return self.gateway.fetch_all(
@@ -448,6 +663,8 @@ class GraphStore:
         source_ids: list[str] | None = None,
         entity_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        if paragraph_ids is not None and not paragraph_ids:
+            return []
         if paragraph_ids:
             sql = f"SELECT * FROM paragraph_entities WHERE paragraph_id IN ({placeholders(paragraph_ids)})"
             params: list[str] = list(paragraph_ids)
@@ -479,6 +696,8 @@ class GraphStore:
         paragraph_id: str | None = None,
         relation_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        if paragraph_ids is not None and not paragraph_ids:
+            return []
         if paragraph_ids:
             sql = f"SELECT * FROM paragraph_relations WHERE paragraph_id IN ({placeholders(paragraph_ids)})"
             params: list[str] = list(paragraph_ids)

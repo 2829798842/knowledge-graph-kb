@@ -1,5 +1,4 @@
-"""为知识库运行时容器提供 FastAPI 依赖注入函数。"""
-
+"""FastAPI dependency helpers for the knowledge-base container."""
 from fastapi import HTTPException, Request
 
 from src.kb import KnowledgeBaseContainer
@@ -8,7 +7,7 @@ from src.kb import KnowledgeBaseContainer
 def get_kb_container(request: Request) -> KnowledgeBaseContainer:
     container = getattr(request.app.state, "kb_container", None)
     if container is None:
-        raise HTTPException(status_code=503, detail="知识库运行时尚未初始化。")
+        raise HTTPException(status_code=503, detail="Knowledge-base container is not initialized yet.")
     return container
 
 
@@ -50,3 +49,7 @@ def get_source_service(request: Request):
 
 def get_openai_gateway(request: Request):
     return get_kb_container(request).openai_gateway
+
+
+def get_maintenance_service(request: Request):
+    return get_kb_container(request).maintenance_service

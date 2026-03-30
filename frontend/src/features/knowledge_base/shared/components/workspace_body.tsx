@@ -1,7 +1,3 @@
-/**
- * Route workspace body.
- */
-
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 
 import type { ResolvedTheme } from '../../../../theme';
@@ -14,14 +10,6 @@ interface WorkspaceBodyProps {
   resolved_theme: ResolvedTheme;
 }
 
-const ImportCenterPanel = lazy(async () => ({
-  default: (await import('../../import_center/components/import_center_panel')).ImportCenterPanel,
-}));
-
-const ModelConfigPanel = lazy(async () => ({
-  default: (await import('../../model_config/components/model_config_panel')).ModelConfigPanel,
-}));
-
 const GraphBrowserPanel = lazy(async () => ({
   default: (await import('../../graph_browser/components/graph_browser_panel')).GraphBrowserPanel,
 }));
@@ -30,14 +18,10 @@ const QueryStudioPanel = lazy(async () => ({
   default: (await import('../../query_studio/components/query_studio_panel')).QueryStudioPanel,
 }));
 
-const SourceBrowserPanel = lazy(async () => ({
-  default: (await import('../../source_browser/components/source_browser_panel')).SourceBrowserPanel,
-}));
-
 export function WorkspaceBody(props: WorkspaceBodyProps) {
   const { resolved_theme } = props;
   const { active_workspace } = use_workspace_shell();
-  const [mounted_workspaces, set_mounted_workspaces] = useState<WorkspaceTab[]>(['import']);
+  const [mounted_workspaces, set_mounted_workspaces] = useState<WorkspaceTab[]>(['chat']);
 
   useEffect(() => {
     set_mounted_workspaces((current_tabs) =>
@@ -47,11 +31,8 @@ export function WorkspaceBody(props: WorkspaceBodyProps) {
 
   const panels: Record<WorkspaceTab, JSX.Element> = useMemo(
     () => ({
-      import: <ImportCenterPanel />,
-      config: <ModelConfigPanel />,
+      chat: <QueryStudioPanel />,
       graph: <GraphBrowserPanel resolved_theme={resolved_theme} />,
-      query: <QueryStudioPanel />,
-      source: <SourceBrowserPanel />,
     }),
     [resolved_theme],
   );
@@ -63,17 +44,10 @@ export function WorkspaceBody(props: WorkspaceBodyProps) {
           return null;
         }
 
-        const is_active: boolean = active_workspace === tab.id;
+        const is_active = active_workspace === tab.id;
         return (
-          <section
-            aria-hidden={!is_active}
-            className='kb-workspace-view'
-            hidden={!is_active}
-            key={tab.id}
-          >
-            <Suspense
-              fallback={<WorkspaceLoadingState description={tab.description} title={tab.label} />}
-            >
+          <section aria-hidden={!is_active} className='kb-workspace-view' hidden={!is_active} key={tab.id}>
+            <Suspense fallback={<WorkspaceLoadingState description={tab.description} title={tab.label} />}>
               {panels[tab.id]}
             </Suspense>
           </section>

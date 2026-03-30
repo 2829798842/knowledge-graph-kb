@@ -2,7 +2,7 @@
  * Query execution and query-result state.
  */
 
-import { startTransition, useEffect, useState, type Dispatch, type SetStateAction } from 'react';
+import { startTransition, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 
 import { QUERY_MODE_LABELS } from '../../config/ui_constants';
 import {
@@ -29,6 +29,7 @@ import type {
 } from '../../types/knowledge_base_types';
 
 interface QueryWorkspaceStateProps {
+  active_workspace: WorkspaceTab;
   query_mode: QueryMode;
   selected_source_ids: string[];
   set_active_workspace: Dispatch<SetStateAction<WorkspaceTab>>;
@@ -57,7 +58,7 @@ function resolve_answer_execution(message: ChatMessageRecord | null): AnswerExec
 function build_answer_message(message: ChatMessageRecord): string {
   const execution = resolve_answer_execution(message);
   if (execution.model_invoked) {
-    return `问答完成，系统已先检索知识库，并基于 ${execution.matched_paragraph_count} 条证据生成自然语言回答。`;
+    return `问答完成，系统已基于 ${execution.matched_paragraph_count} 条证据生成回答。`;
   }
   return execution.message;
 }
@@ -69,6 +70,7 @@ function latest_assistant_message(messages: ChatMessageRecord[]): ChatMessageRec
 
 export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
   const {
+    active_workspace,
     query_mode,
     selected_source_ids,
     set_active_workspace,
@@ -87,33 +89,63 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
   const [relation_results, set_relation_results] = useState<RelationSearchItemRecord[]>([]);
   const [source_results, set_source_results] = useState<SourceSearchItemRecord[]>([]);
   const [is_querying, set_is_querying] = useState<boolean>(false);
+  const [has_hydrated_answer_sessions, set_has_hydrated_answer_sessions] = useState<boolean>(false);
+  const [is_loading_answer_sessions, set_is_loading_answer_sessions] = useState<boolean>(false);
+  const hydrate_answer_sessions_ref = useRef<Promise<void> | null>(null);
   const active_answer_message: ChatMessageRecord | null = latest_assistant_message(answer_messages);
 
   async function apply_session_detail(detail: ChatSessionDetailRecord): Promise<void> {
-    const latestAnswerMessage = latest_assistant_message(detail.messages);
+    const latest_answer_message = latest_assistant_message(detail.messages);
     startTransition(() => {
       set_active_answer_session_id(detail.session.id);
       set_answer_messages(detail.messages);
-      set_highlighted_node_ids(latestAnswerMessage?.highlighted_node_ids ?? []);
-      set_highlighted_edge_ids(latestAnswerMessage?.highlighted_edge_ids ?? []);
+      set_highlighted_node_ids(latest_answer_message?.highlighted_node_ids ?? []);
+      set_highlighted_edge_ids(latest_answer_message?.highlighted_edge_ids ?? []);
     });
   }
 
   async function hydrate_answer_sessions(preferred_session_id?: string | null): Promise<void> {
-    const sessions = await list_chat_sessions();
-    startTransition(() => {
-      set_answer_sessions(sessions);
-    });
-    const next_session_id = preferred_session_id ?? active_answer_session_id ?? sessions[0]?.id ?? null;
-    if (!next_session_id) {
-      startTransition(() => {
-        set_active_answer_session_id(null);
-        set_answer_messages([]);
-      });
+    if (hydrate_answer_sessions_ref.current && !preferred_session_id) {
+      await hydrate_answer_sessions_ref.current;
       return;
     }
-    const detail = await get_chat_session(next_session_id);
-    await apply_session_detail(detail);
+    if (has_hydrated_answer_sessions && !preferred_session_id) {
+      return;
+    }
+
+    const hydrate_promise = (async () => {
+      set_is_loading_answer_sessions(true);
+      const sessions = await list_chat_sessions();
+      startTransition(() => {
+        set_answer_sessions(sessions);
+      });
+      const next_session_id = preferred_session_id ?? active_answer_session_id ?? sessions[0]?.id ?? null;
+      if (!next_session_id) {
+        startTransition(() => {
+          set_active_answer_session_id(null);
+          set_answer_messages([]);
+          set_highlighted_node_ids([]);
+          set_highlighted_edge_ids([]);
+        });
+        set_has_hydrated_answer_sessions(true);
+        return;
+      }
+      const detail = await get_chat_session(next_session_id);
+      await apply_session_detail(detail);
+      set_has_hydrated_answer_sessions(true);
+    })();
+
+    hydrate_answer_sessions_ref.current = hydrate_promise;
+    try {
+      await hydrate_promise;
+    } finally {
+      hydrate_answer_sessions_ref.current = null;
+      set_is_loading_answer_sessions(false);
+    }
+  }
+
+  async function ensure_answer_sessions_ready(): Promise<void> {
+    await hydrate_answer_sessions();
   }
 
   async function ensure_active_session(): Promise<string> {
@@ -149,7 +181,8 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
         set_highlighted_node_ids([]);
         set_highlighted_edge_ids([]);
       });
-      set_message(`已创建问答会话：${session.title}`);
+      set_has_hydrated_answer_sessions(true);
+      set_message(`已创建会话：${session.title}`);
       set_error(null);
     } catch (session_error) {
       set_error((session_error as Error).message);
@@ -157,10 +190,13 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
   }
 
   useEffect(() => {
+    if (active_workspace !== 'chat' || query_mode !== 'answer' || has_hydrated_answer_sessions) {
+      return;
+    }
     void hydrate_answer_sessions().catch((session_error) => {
       set_error((session_error as Error).message);
     });
-  }, []);
+  }, [active_workspace, query_mode, has_hydrated_answer_sessions, set_error]);
 
   async function execute_query(query_text: string): Promise<void> {
     const normalized_query = query_text.trim();
@@ -172,7 +208,7 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
 
     set_is_querying(true);
     set_last_query_text(normalized_query);
-    set_active_workspace('query');
+    set_active_workspace('chat');
     set_error(null);
     set_message(`正在执行${QUERY_MODE_LABELS[query_mode]}...`);
 
@@ -183,6 +219,7 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
         set_relation_results([]);
         set_source_results([]);
 
+        await ensure_answer_sessions_ready();
         const session_id = await ensure_active_session();
         answer_session_id = session_id;
         const detail = await post_chat_message(session_id, {
@@ -197,9 +234,9 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
             return [next_session, ...current_sessions.filter((item) => item.id !== next_session.id)];
           });
         });
-        const latestAnswerMessage = latest_assistant_message(detail.messages);
-        if (latestAnswerMessage) {
-          set_message(build_answer_message(latestAnswerMessage));
+        const latest_answer_message = latest_assistant_message(detail.messages);
+        if (latest_answer_message) {
+          set_message(build_answer_message(latest_answer_message));
         }
         set_error(null);
         return;
@@ -216,7 +253,7 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
         });
         startTransition(() => {
           set_record_results(items);
-          set_message(`表格记录检索完成，共 ${items.length} 条结果。`);
+          set_message(`记录检索完成，共 ${items.length} 条结果。`);
           set_error(null);
         });
         return;
@@ -262,7 +299,7 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
           const detail = await get_chat_session(answer_session_id);
           await apply_session_detail(detail);
         } catch {
-          // Ignore refresh errors and keep surfacing the original request failure.
+          // Ignore refresh failures and surface the original request error.
         }
       }
       set_error((query_error as Error).message);
@@ -281,6 +318,7 @@ export function use_query_workspace_state(props: QueryWorkspaceStateProps) {
     relation_results,
     source_results,
     is_querying,
+    is_loading_answer_sessions,
     execute_query,
     select_answer_session,
     create_answer_session,

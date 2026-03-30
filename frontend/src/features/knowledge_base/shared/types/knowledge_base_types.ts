@@ -1,5 +1,5 @@
 /**
- * 定义知识库工作区共享类型。
+ * 知识库工作区共享类型定义。
  */
 
 export interface ImportChunkRecord {
@@ -36,6 +36,9 @@ export interface ImportFileRecord {
   storage_path: string | null;
   metadata: Record<string, unknown>;
   error: string | null;
+  failure_stage: string | null;
+  step_durations: Record<string, number>;
+  stats: Record<string, unknown>;
   created_at: string;
   updated_at: string;
   chunks: ImportChunkRecord[];
@@ -58,6 +61,10 @@ export interface ImportTaskRecord {
   message: string | null;
   error: string | null;
   params: Record<string, unknown>;
+  failure_stage: string | null;
+  step_durations: Record<string, number>;
+  retry_of: string | null;
+  stats: Record<string, unknown>;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -293,6 +300,8 @@ export interface ParagraphRecord {
   updated_at: string;
 }
 
-export type WorkspaceTab = 'import' | 'config' | 'graph' | 'query' | 'source';
+export type WorkspaceTab = 'chat' | 'graph';
 export type ImportMode = 'upload' | 'paste' | 'scan' | 'openie' | 'convert';
 export type QueryMode = 'answer' | 'record' | 'entity' | 'relation' | 'source';
+export type GraphViewportMode = 'fit-all' | 'focus-selection';
+export type GraphDrawerMode = 'filters' | 'create-node' | 'relation' | 'inspector' | null;
