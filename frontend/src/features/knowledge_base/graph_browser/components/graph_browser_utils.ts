@@ -1,251 +1,221 @@
-import {
-  get_input_mode_label,
-  get_knowledge_type_label,
-  get_strategy_label,
-  NODE_TYPE_LABELS,
-  PREDICATE_SUGGESTIONS,
-} from '../../shared/config/ui_constants';
 import type {
   GraphEdgeDetailRecord,
   GraphNodeDetailRecord,
-  GraphViewportMode,
+  KnowledgeGraphNodeRecord,
   KnowledgeGraphRecord,
   SourceRecord,
 } from '../../shared/types/knowledge_base_types';
 
-export type ViewportCommandType = GraphViewportMode | 'zoom-in' | 'zoom-out';
+export const DEFAULT_PREDICATE = '提及';
+export const DENSITY_PRESETS = [48, 72, 96] as const;
+
+let viewport_command_id = 0;
 
 export interface ViewportCommand {
   id: number;
-  type: ViewportCommandType;
+  type: 'fit-all' | 'focus-selection' | 'zoom-in' | 'zoom-out' | 'relayout';
 }
 
-export interface NodeActionCopyRecord {
-  rename_allowed: boolean;
-  delete_allowed: boolean;
-  relation_allowed: boolean;
-  delete_label: string;
-  delete_message: string;
+export interface GraphSearchCandidateRecord {
+  id: string;
+  label: string;
+  kind_label: string;
+  description: string;
 }
 
-export interface EdgeActionCopyRecord {
-  delete_allowed: boolean;
-  delete_message: string;
-  copy_allowed: boolean;
-}
+type SourceLike = Pick<SourceRecord, 'id' | 'name'> &
+  Partial<Pick<SourceRecord, 'summary' | 'source_kind'>>;
 
-export const DENSITY_PRESETS = [28, 52, 76];
-export const DEFAULT_PREDICATE = PREDICATE_SUGGESTIONS[0] ?? '提及';
+export const GRAPH_LAYER_LABELS = {
+  semantic: '语义层',
+  evidence: '证据层',
+  structure: '结构层',
+} as const;
 
-function merge_node_metadata(metadata: Record<string, unknown> | undefined): Record<string, unknown> {
-  if (!metadata) {
-    return {};
+function read_text(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
   }
-  const nested =
-    metadata.metadata && typeof metadata.metadata === 'object' && !Array.isArray(metadata.metadata)
-      ? (metadata.metadata as Record<string, unknown>)
-      : {};
-  return { ...metadata, ...nested };
-}
-
-export function format_metadata_value(value: unknown): string {
-  if (value === null || value === undefined) {
-    return '';
-  }
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+  if (typeof value === 'number' && Number.isFinite(value)) {
     return String(value);
   }
+  return null;
+}
+
+function read_string_list(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.map((item) => read_text(item)).filter((item): item is string => Boolean(item));
+}
+
+function short_source_id(source_id: string): string {
+  return source_id.slice(0, 8);
+}
+
+function build_source_name_count_map(sources: SourceLike[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const source of sources) {
+    counts.set(source.name, (counts.get(source.name) ?? 0) + 1);
+  }
+  return counts;
+}
+
+export function format_metadata_value(value: unknown): string | null {
   if (Array.isArray(value)) {
-    return value.map((item) => format_metadata_value(item)).filter(Boolean).join(', ');
+    const items = read_string_list(value);
+    return items.length ? items.join('、') : null;
   }
-  if (typeof value === 'object') {
-    return JSON.stringify(value);
-  }
-  return '';
+  return read_text(value);
 }
 
-export function node_option_label(node_id: string, graph: KnowledgeGraphRecord): string {
-  const node = graph.nodes.find((current_node) => current_node.id === node_id);
-  if (!node) {
-    return node_id;
-  }
-  return `${NODE_TYPE_LABELS[node.type] ?? node.type} · ${node.label}`;
+export function create_viewport_command(type: ViewportCommand['type']): ViewportCommand {
+  viewport_command_id += 1;
+  return {
+    id: viewport_command_id,
+    type,
+  };
 }
 
-export function collect_node_import_rows(node_type: string, metadata: Record<string, unknown> | undefined): [string, string][] {
-  const merged = merge_node_metadata(metadata);
-  const rows: [string, string][] = [];
-  const file_type = format_metadata_value(merged.source_file_type || merged.file_type);
-  const file_name = format_metadata_value(merged.name);
-  const source_kind = format_metadata_value(merged.source_kind);
-  const input_mode = format_metadata_value(merged.input_mode);
-  const strategy = format_metadata_value(
-    merged.detected_strategy || merged.strategy || merged.source_strategy || merged.import_strategy,
-  );
-
-  if (file_type) {
-    rows.push(['文件类型', file_type]);
+export function format_source_display_name(source: SourceLike, sources: SourceLike[]): string {
+  const counts = build_source_name_count_map(sources);
+  if ((counts.get(source.name) ?? 0) <= 1) {
+    return source.name;
   }
-  if (file_name) {
-    rows.push(['文件名称', file_name]);
-  }
-  if (strategy) {
-    rows.push(['导入策略', get_strategy_label(strategy)]);
-  }
-  if (source_kind) {
-    rows.push(['来源类型', get_input_mode_label(source_kind)]);
-  }
-  if (input_mode) {
-    rows.push(['导入方式', get_input_mode_label(input_mode)]);
-  }
-
-  if (node_type === 'paragraph') {
-    const knowledge_type = format_metadata_value(merged.knowledge_type);
-    const worksheet_name = format_metadata_value(merged.worksheet_name);
-    const is_spreadsheet = format_metadata_value(merged.is_spreadsheet).toLowerCase() === 'true';
-
-    if (is_spreadsheet) {
-      rows.push(['表格来源', '是']);
-    }
-    if (knowledge_type) {
-      rows.push(['知识类型', get_knowledge_type_label(knowledge_type)]);
-    }
-    if (worksheet_name) {
-      rows.push(['工作表', worksheet_name]);
-    }
-  }
-
-  if (node_type === 'source' || node_type === 'workbook') {
-    const spreadsheet_sheets = Array.isArray(merged.spreadsheet_sheets)
-      ? merged.spreadsheet_sheets.map((sheet) => format_metadata_value(sheet)).filter(Boolean)
-      : [];
-
-    if (spreadsheet_sheets.length > 0) {
-      rows.push(['工作表列表', spreadsheet_sheets.join(', ')]);
-    }
-  }
-
-  const source_id = format_metadata_value(merged.source_id);
-  if (source_id) {
-    rows.push(['来源 ID', source_id]);
-  }
-
-  return rows;
+  return `${source.name} · ${short_source_id(source.id)}`;
 }
 
-export function collect_edge_import_rows(metadata: Record<string, unknown> | undefined): [string, string][] {
-  const rows: [string, string][] = [];
-  if (!metadata) {
-    return rows;
-  }
-
-  const source_id = format_metadata_value(metadata.source_id);
-  if (source_id) {
-    rows.push(['来源 ID', source_id]);
-  }
-
-  const paragraph_id = format_metadata_value(metadata.paragraph_id);
-  if (paragraph_id) {
-    rows.push(['段落 ID', paragraph_id]);
-  }
-
-  const relation_source = format_metadata_value((metadata.metadata as Record<string, unknown> | undefined)?.relation_source);
-  if (relation_source) {
-    rows.push(['关系来源', relation_source]);
-  }
-
-  return rows;
-}
-
-export function selected_source_summary(selected_source_ids: string[], sources: SourceRecord[]): string {
+export function compact_selected_source_summary(
+  selected_source_ids: string[],
+  sources: SourceLike[],
+  max_count = 2,
+): string {
   if (!selected_source_ids.length) {
     return '全部来源';
   }
 
-  const selected_names = sources
-    .filter((source) => selected_source_ids.includes(source.id))
-    .map((source) => source.name);
-
-  if (!selected_names.length) {
+  const selected_id_set = new Set(selected_source_ids);
+  const selected_sources = sources.filter((source) => selected_id_set.has(source.id));
+  if (!selected_sources.length) {
     return '已选来源';
   }
 
-  if (selected_names.length <= 3) {
-    return selected_names.join('、');
+  const labels = selected_sources.map((source) => format_source_display_name(source, sources));
+  if (labels.length <= max_count) {
+    return labels.join('、');
   }
 
-  return `${selected_names.slice(0, 3).join('、')} 等 ${selected_names.length} 个来源`;
+  return `${labels.slice(0, max_count).join('、')} 等 ${labels.length} 个来源`;
 }
 
-export function node_action_copy(node_detail: GraphNodeDetailRecord): NodeActionCopyRecord {
-  const node_type = node_detail.node.type;
-
-  if (node_type === 'source' || node_type === 'workbook') {
-    return {
-      rename_allowed: true,
-      delete_allowed: true,
-      relation_allowed: false,
-      delete_label: '删除来源',
-      delete_message: `确认删除来源“${node_detail.node.label}”吗？这会同步清理相关段落、关系和向量索引。`,
-    };
+export function selected_source_summary(
+  selected_source_ids: string[],
+  sources: SourceLike[],
+): string {
+  if (!selected_source_ids.length) {
+    return '当前范围：全部来源';
   }
 
-  if (node_type === 'entity') {
-    return {
-      rename_allowed: true,
-      delete_allowed: true,
-      relation_allowed: true,
-      delete_label: '删除实体',
-      delete_message: `确认删除实体“${node_detail.node.label}”吗？相关关系也会同步清理。`,
-    };
+  const selected_id_set = new Set(selected_source_ids);
+  const selected_sources = sources.filter((source) => selected_id_set.has(source.id));
+  if (!selected_sources.length) {
+    return '当前范围：已选来源';
   }
 
-  if (node_type === 'paragraph') {
-    return {
-      rename_allowed: false,
-      delete_allowed: true,
-      relation_allowed: false,
-      delete_label: '删除段落',
-      delete_message: '确认删除当前段落吗？相关关系和向量索引也会一起清理。',
-    };
+  const labels = selected_sources.map((source) => format_source_display_name(source, sources));
+  if (labels.length <= 2) {
+    return `当前范围：${labels.join('、')}`;
   }
+  return `当前范围：${labels.slice(0, 2).join('、')} 等 ${labels.length} 个来源`;
+}
+
+export function node_option_label(node_id: string, graph: KnowledgeGraphRecord): string {
+  const node = graph.nodes.find((item) => item.id === node_id);
+  if (!node) {
+    return node_id;
+  }
+  const label = node.display_label ?? node.label;
+  const kind = node.kind_label ?? node.type;
+  return `${label}（${kind}）`;
+}
+
+export function create_search_candidate(node: KnowledgeGraphNodeRecord): GraphSearchCandidateRecord {
+  const label = node.display_label ?? node.label;
+  const kind_label = node.kind_label ?? node.type;
+  const description_parts = [
+    node.source_name,
+    typeof node.evidence_count === 'number' ? `证据 ${node.evidence_count}` : null,
+    typeof node.metadata?.relation_count === 'number' ? `关系 ${node.metadata.relation_count}` : null,
+  ].filter(Boolean);
 
   return {
-    rename_allowed: false,
-    delete_allowed: false,
-    relation_allowed: false,
-    delete_label: '删除节点',
-    delete_message: '',
+    id: node.id,
+    label,
+    kind_label,
+    description: description_parts.join(' · ') || '语义主图中的可见实体',
   };
 }
 
-export function edge_action_copy(edge_detail: GraphEdgeDetailRecord): EdgeActionCopyRecord {
-  if (edge_detail.edge.type === 'manual') {
-    return {
-      delete_allowed: true,
-      delete_message: '确认删除这条手动关系吗？',
-      copy_allowed: true,
-    };
-  }
+function metadata_row(label: string, value: unknown): [string, string] | null {
+  const formatted = format_metadata_value(value);
+  return formatted ? [label, formatted] : null;
+}
 
-  if (edge_detail.edge.type === 'relation') {
-    return {
-      delete_allowed: true,
-      delete_message: '确认删除这条实体关系吗？',
-      copy_allowed: true,
-    };
-  }
+export function collect_node_import_rows(
+  node_type: string,
+  metadata: Record<string, unknown>,
+): [string, string][] {
+  const rows = [
+    metadata_row('文件类型', metadata.file_type),
+    metadata_row('文件名称', metadata.file_name),
+    metadata_row('导入策略', metadata.strategy),
+    metadata_row('来源类型', metadata.source_kind),
+    metadata_row('导入方式', metadata.input_mode),
+    metadata_row('工作表', metadata.worksheet_name),
+    metadata_row('表格来源', metadata.workbook_name),
+    metadata_row('来源 ID', metadata.source_id),
+    metadata_row('段落 ID', metadata.paragraph_id),
+    node_type === 'paragraph' ? metadata_row('知识类型', metadata.knowledge_type) : null,
+  ];
+  return rows.filter((item): item is [string, string] => Boolean(item));
+}
+
+export function collect_edge_import_rows(metadata: Record<string, unknown>): [string, string][] {
+  const rows = [
+    metadata_row('关系来源', metadata.relation_source),
+    metadata_row('来源类型', metadata.source_kind),
+    metadata_row('来源 ID', metadata.source_id),
+    metadata_row('段落 ID', metadata.paragraph_id),
+    metadata_row('工作表', metadata.worksheet_name),
+  ];
+  return rows.filter((item): item is [string, string] => Boolean(item));
+}
+
+export function node_action_copy(detail: GraphNodeDetailRecord) {
+  const { node } = detail;
+  const rename_allowed = node.type === 'entity' || node.type === 'source' || node.type === 'workbook';
+  const relation_allowed = node.type === 'entity';
+  const delete_allowed = node.type !== 'worksheet' && node.type !== 'record';
 
   return {
-    delete_allowed: false,
-    delete_message: '',
-    copy_allowed: false,
+    rename_allowed,
+    relation_allowed,
+    delete_allowed,
+    delete_label: node.type === 'paragraph' ? '删除段落' : '删除节点',
+    delete_message: `确认删除“${node.display_label ?? node.label}”吗？`,
   };
 }
 
-export function create_viewport_command(type: ViewportCommandType): ViewportCommand {
+export function edge_action_copy(detail: GraphEdgeDetailRecord) {
+  const { edge } = detail;
+  const delete_allowed = !(
+    (edge.is_structural ?? false) ||
+    ['contains', 'contains_sheet', 'contains_record', 'mentions'].includes(edge.type)
+  );
+
   return {
-    id: Date.now() + Math.floor(Math.random() * 1000),
-    type,
+    copy_allowed: edge.type === 'relation' || edge.type === 'manual',
+    delete_allowed,
+    delete_message: `确认删除关系“${edge.display_label ?? edge.label}”吗？`,
   };
 }

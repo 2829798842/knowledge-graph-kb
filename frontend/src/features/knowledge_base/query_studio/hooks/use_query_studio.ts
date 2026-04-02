@@ -27,5 +27,6 @@ export function use_query_studio() {
     focus_relation: workspace.focus_relation,
     focus_source: workspace.focus_source,
     focus_paragraph: workspace.focus_paragraph,
+    focus_citation: workspace.focus_citation,
   };
 }

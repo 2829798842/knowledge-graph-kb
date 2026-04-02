@@ -45,6 +45,8 @@ export function use_knowledge_base_workspace_store() {
   });
   const focus = use_workspace_focus_actions({
     default_graph_density: DEFAULT_GRAPH_DENSITY,
+    highlighted_node_ids: graph.highlighted_node_ids,
+    selected_node_id: graph.selected_node_id,
     set_active_workspace: ui.set_active_workspace,
     set_is_source_library_open: ui.set_is_source_library_open,
     set_include_paragraphs: graph.set_include_paragraphs,

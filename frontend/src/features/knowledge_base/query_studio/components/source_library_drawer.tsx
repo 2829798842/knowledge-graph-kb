@@ -1,9 +1,27 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+import {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
+import { format_source_display_name } from '../../graph_browser/components/graph_browser_utils';
 import { ParagraphEvidencePreview } from '../../shared/components/paragraph_evidence_preview';
-import { get_input_mode_label, get_status_label, get_strategy_label, get_vector_state_label } from '../../shared/config/ui_constants';
-import type { ParagraphRecord, SourceDetailRecord, SourceRecord } from '../../shared/types/knowledge_base_types';
+import {
+  get_input_mode_label,
+  get_status_label,
+  get_strategy_label,
+  get_vector_state_label,
+} from '../../shared/config/ui_constants';
+import type {
+  ParagraphRecord,
+  SourceDetailRecord,
+  SourceRecord,
+} from '../../shared/types/knowledge_base_types';
 
 function source_summary(source: SourceRecord): string {
   return source.summary || get_input_mode_label(source.source_kind) || '暂无摘要';
@@ -24,7 +42,10 @@ interface SourceLibraryDrawerProps {
   source_paragraphs: ParagraphRecord[];
   is_updating_source: boolean;
   is_deleting_source: boolean;
-  update_source: (source_id: string, payload: { name?: string; summary?: string; metadata?: Record<string, unknown> }) => Promise<void>;
+  update_source: (
+    source_id: string,
+    payload: { name?: string; summary?: string; metadata?: Record<string, unknown> },
+  ) => Promise<void>;
   delete_source: (source_id: string) => Promise<void>;
   on_close: () => void;
   on_focus_paragraph: (paragraph_id: string) => void;
@@ -62,7 +83,8 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
         if (!deferred_source_keyword) {
           return true;
         }
-        const haystack = `${source.name} ${source.summary ?? ''} ${source.source_kind} ${source.input_mode}`.toLowerCase();
+        const haystack =
+          `${source.name} ${source.summary ?? ''} ${source.source_kind} ${source.input_mode}`.toLowerCase();
         return haystack.includes(deferred_source_keyword);
       }),
     [deferred_source_keyword, sources],
@@ -87,7 +109,10 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
     measureElement: (element) => element?.getBoundingClientRect().height ?? 0,
   });
 
-  const active_source = source_detail?.source ?? sources.find((source) => source.id === selected_source_browser_id) ?? null;
+  const active_source =
+    source_detail?.source ??
+    sources.find((source) => source.id === selected_source_browser_id) ??
+    null;
 
   useEffect(() => {
     set_name_draft(active_source?.name ?? '');
@@ -100,10 +125,15 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
 
   return (
     <div className='kb-modal-backdrop' onClick={on_close} role='presentation'>
-      <aside aria-modal='true' className='kb-side-drawer' onClick={(event) => event.stopPropagation()} role='dialog'>
+      <aside
+        aria-modal='true'
+        className='kb-side-drawer'
+        onClick={(event) => event.stopPropagation()}
+        role='dialog'
+      >
         <div className='kb-side-drawer-header'>
           <div>
-            <span className='kb-context-label'>Sources</span>
+            <span className='kb-context-label'>来源</span>
             <h3>来源库</h3>
             <p>在这里切换来源范围、查看单个来源详情，并完成重命名与删除。</p>
           </div>
@@ -117,7 +147,11 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
             全部来源
           </button>
           {active_source ? (
-            <button className='kb-secondary-button' onClick={() => set_selected_source_ids([active_source.id])} type='button'>
+            <button
+              className='kb-secondary-button'
+              onClick={() => set_selected_source_ids([active_source.id])}
+              type='button'
+            >
               仅当前来源
             </button>
           ) : null}
@@ -127,16 +161,30 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
           <section className='kb-source-library-list'>
             <label className='kb-form-field'>
               <span>筛选来源</span>
-              <input onChange={(event) => set_source_keyword(event.target.value)} placeholder='按名称、摘要或类型搜索' type='search' value={source_keyword} />
+              <input
+                onChange={(event) => set_source_keyword(event.target.value)}
+                placeholder='按名称、摘要或类型搜索'
+                type='search'
+                value={source_keyword}
+              />
             </label>
 
             <div className='kb-source-library-results'>
               {filtered_sources.map((source) => {
                 const in_scope = is_source_in_scope(source.id, selected_source_ids);
                 return (
-                  <article className={`kb-source-library-card ${selected_source_browser_id === source.id ? 'is-active' : ''}`} key={source.id}>
-                    <button className='kb-source-library-hit' onClick={() => set_selected_source_browser_id(source.id)} type='button'>
-                      <strong>{source.name}</strong>
+                  <article
+                    className={`kb-source-library-card ${
+                      selected_source_browser_id === source.id ? 'is-active' : ''
+                    }`}
+                    key={source.id}
+                  >
+                    <button
+                      className='kb-source-library-hit'
+                      onClick={() => set_selected_source_browser_id(source.id)}
+                      type='button'
+                    >
+                      <strong>{format_source_display_name(source, sources)}</strong>
                       <span>{source_summary(source)}</span>
                     </button>
 
@@ -161,7 +209,11 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
                       }}
                       type='button'
                     >
-                      {selected_source_ids.length ? (in_scope ? '移出范围' : '加入范围') : '仅此来源'}
+                      {selected_source_ids.length
+                        ? in_scope
+                          ? '移出范围'
+                          : '加入范围'
+                        : '仅此来源'}
                     </button>
                   </article>
                 );
@@ -172,9 +224,13 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
 
           <section className='kb-source-library-preview'>
             <div className='kb-detail-card'>
-              <span className='kb-context-label'>Preview</span>
-              <h3>{active_source?.name ?? '选择一个来源'}</h3>
-              <p>{active_source ? source_summary(active_source) : '选中来源后，这里会显示摘要、统计和段落内容。'}</p>
+              <span className='kb-context-label'>来源预览</span>
+              <h3>{active_source ? format_source_display_name(active_source, sources) : '选择一个来源'}</h3>
+              <p>
+                {active_source
+                  ? source_summary(active_source)
+                  : '选中来源后，这里会显示摘要、统计和段落内容。'}
+              </p>
               {source_detail ? (
                 <div className='kb-meta-strip'>
                   <span className='kb-meta-pill'>{`段落 ${source_detail.paragraph_count}`}</span>
@@ -187,25 +243,43 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
                 <>
                   <label className='kb-form-field'>
                     <span>来源名称</span>
-                    <input onChange={(event) => set_name_draft(event.target.value)} type='text' value={name_draft} />
+                    <input
+                      onChange={(event) => set_name_draft(event.target.value)}
+                      type='text'
+                      value={name_draft}
+                    />
                   </label>
 
                   <label className='kb-form-field'>
                     <span>摘要</span>
-                    <textarea onChange={(event) => set_summary_draft(event.target.value)} rows={3} value={summary_draft} />
+                    <textarea
+                      onChange={(event) => set_summary_draft(event.target.value)}
+                      rows={3}
+                      value={summary_draft}
+                    />
                   </label>
 
                   <div className='kb-button-row'>
                     <button
                       className='kb-primary-button'
                       disabled={is_updating_source || !name_draft.trim()}
-                      onClick={() => void update_source(active_source.id, { name: name_draft.trim(), summary: summary_draft.trim() || undefined })}
+                      onClick={() =>
+                        void update_source(active_source.id, {
+                          name: name_draft.trim(),
+                          summary: summary_draft.trim() || undefined,
+                        })
+                      }
                       type='button'
                     >
-                      {is_updating_source ? '保存中...' : '保存来源'}
+                      {is_updating_source ? '保存中…' : '保存来源'}
                     </button>
-                    <button className='kb-secondary-button' disabled={is_deleting_source} onClick={() => void delete_source(active_source.id)} type='button'>
-                      {is_deleting_source ? '删除中...' : '删除来源'}
+                    <button
+                      className='kb-secondary-button is-danger'
+                      disabled={is_deleting_source}
+                      onClick={() => void delete_source(active_source.id)}
+                      type='button'
+                    >
+                      {is_deleting_source ? '删除中…' : '删除来源'}
                     </button>
                   </div>
                 </>
@@ -214,12 +288,23 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
 
             <label className='kb-form-field'>
               <span>筛选段落</span>
-              <input onChange={(event) => set_paragraph_keyword(event.target.value)} placeholder='按段落内容搜索' type='search' value={paragraph_keyword} />
+              <input
+                onChange={(event) => set_paragraph_keyword(event.target.value)}
+                placeholder='按段落内容搜索'
+                type='search'
+                value={paragraph_keyword}
+              />
             </label>
 
             <div className='kb-source-library-paragraphs' ref={paragraph_scroll_ref}>
               {filtered_paragraphs.length ? (
-                <div className='kb-virtual-list-spacer' style={{ height: `${paragraph_virtualizer.getTotalSize()}px`, position: 'relative' }}>
+                <div
+                  className='kb-virtual-list-spacer'
+                  style={{
+                    height: `${paragraph_virtualizer.getTotalSize()}px`,
+                    position: 'relative',
+                  }}
+                >
                   {paragraph_virtualizer.getVirtualItems().map((virtual_item) => {
                     const paragraph = filtered_paragraphs[virtual_item.index];
                     return (
@@ -228,17 +313,31 @@ export function SourceLibraryDrawer(props: SourceLibraryDrawerProps) {
                         data-index={virtual_item.index}
                         key={paragraph.id}
                         ref={paragraph_virtualizer.measureElement}
-                        style={{ left: 0, position: 'absolute', top: 0, transform: `translateY(${virtual_item.start}px)`, width: '100%' }}
+                        style={{
+                          left: 0,
+                          position: 'absolute',
+                          top: 0,
+                          transform: `translateY(${virtual_item.start}px)`,
+                          width: '100%',
+                        }}
                       >
                         <article className='kb-chat-source-card'>
                           <strong>{`#${paragraph.position + 1}`}</strong>
-                          <ParagraphEvidencePreview render_kind={paragraph.render_kind} rendered_html={paragraph.rendered_html} text_content={paragraph.content} />
+                          <ParagraphEvidencePreview
+                            render_kind={paragraph.render_kind}
+                            rendered_html={paragraph.rendered_html}
+                            text_content={paragraph.content}
+                          />
                           <div className='kb-meta-strip'>
                             <span className='kb-meta-pill'>{get_vector_state_label(paragraph.vector_state)}</span>
                             <span className='kb-meta-pill'>{`Token ${paragraph.token_count}`}</span>
                           </div>
                           <div className='kb-button-row'>
-                            <button className='kb-secondary-button' onClick={() => on_focus_paragraph(paragraph.id)} type='button'>
+                            <button
+                              className='kb-secondary-button'
+                              onClick={() => on_focus_paragraph(paragraph.id)}
+                              type='button'
+                            >
                               在图谱中定位
                             </button>
                           </div>

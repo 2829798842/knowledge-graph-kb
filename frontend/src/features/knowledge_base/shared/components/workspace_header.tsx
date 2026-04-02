@@ -36,7 +36,7 @@ export function WorkspaceHeader(props: WorkspaceHeaderProps) {
         </button>
 
         <div className='kb-toolbar-copy'>
-          <span className='kb-context-label'>Workspace</span>
+          <span className='kb-context-label'>工作区</span>
           <strong>{active_tab.label}</strong>
         </div>
       </div>
@@ -49,11 +49,11 @@ export function WorkspaceHeader(props: WorkspaceHeaderProps) {
         </div>
 
         <div className='kb-meta-strip'>
-          <span className='kb-meta-pill'>{`来源 ${document_count}`}</span>
-          <span className='kb-meta-pill'>{`任务 ${active_task_count}`}</span>
-          <span className='kb-meta-pill'>{`节点 ${node_count}`}</span>
-          <span className='kb-meta-pill'>{`关系 ${edge_count}`}</span>
-          <span className='kb-meta-pill'>{`高亮 ${highlight_node_count + highlight_edge_count}`}</span>
+          <span className='kb-meta-pill'>{`可用来源 ${document_count}`}</span>
+          <span className='kb-meta-pill'>{`进行中任务 ${active_task_count}`}</span>
+          <span className='kb-meta-pill'>{`范围节点 ${node_count}`}</span>
+          <span className='kb-meta-pill'>{`范围关系 ${edge_count}`}</span>
+          <span className='kb-meta-pill'>{`当前高亮 ${highlight_node_count + highlight_edge_count}`}</span>
         </div>
       </div>
     </header>

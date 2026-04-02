@@ -1,132 +1,128 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { useMemo, useState } from 'react';
 
 import { ParagraphEvidencePreview } from '../../shared/components/paragraph_evidence_preview';
 import type { AnswerCitationRecord } from '../../shared/types/knowledge_base_types';
 
-const SOURCE_PAGE_SIZE = 5;
-
-function read_metadata_text(value: unknown): string | null {
-  if (typeof value === 'string' && value.trim()) {
-    return value.trim();
-  }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    return String(value);
-  }
-  return null;
-}
-
-function resolve_source_meta(citation: AnswerCitationRecord): string[] {
-  const metadata = citation.render_metadata ?? {};
-  const file_name = read_metadata_text(metadata.filename) ?? read_metadata_text(metadata.file_name) ?? read_metadata_text(metadata.title);
-  const page_number = read_metadata_text(metadata.page_number) ?? read_metadata_text(metadata.page);
-  const sheet_name = read_metadata_text(metadata.worksheet_name) ?? read_metadata_text(metadata.sheet_name);
-
-  return [
-    file_name ? `文件：${file_name}` : null,
-    page_number ? `页码：${page_number}` : null,
-    sheet_name ? `工作表：${sheet_name}` : null,
-  ].filter((item): item is string => Boolean(item));
-}
-
 interface ChatSourcesSectionProps {
   citations: AnswerCitationRecord[];
+  on_view_in_graph: (
+    source_id: string,
+    paragraph_id: string,
+    options?: {
+      preferred_anchor_node_id?: string | null;
+      anchor_node_ids?: string[];
+    },
+  ) => void;
   on_focus_paragraph: (paragraph_id: string) => void;
-  on_open_source: (source_id: string) => void;
+}
+
+const PAGE_SIZE = 3;
+
+function pagination_label(page: number, page_count: number): string {
+  return `第 ${page} / ${page_count} 页`;
 }
 
 export function ChatSourcesSection(props: ChatSourcesSectionProps) {
-  const { citations, on_focus_paragraph, on_open_source } = props;
-  const [is_open, set_is_open] = useState(false);
+  const { citations, on_view_in_graph, on_focus_paragraph } = props;
+  const [open, set_open] = useState(false);
   const [page, set_page] = useState(1);
-  const scroll_ref = useRef<HTMLDivElement | null>(null);
-  const total_pages = Math.max(1, Math.ceil(citations.length / SOURCE_PAGE_SIZE));
-  const page_items = useMemo(() => citations.slice((page - 1) * SOURCE_PAGE_SIZE, page * SOURCE_PAGE_SIZE), [citations, page]);
 
-  useEffect(() => {
-    if (page > total_pages) {
-      set_page(total_pages);
-    }
-  }, [page, total_pages]);
+  const page_count = Math.max(1, Math.ceil(citations.length / PAGE_SIZE));
+  const visible_citations = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return citations.slice(start, start + PAGE_SIZE);
+  }, [citations, page]);
 
-  useEffect(() => {
-    if (is_open) {
-      scroll_ref.current?.scrollTo({ top: 0 });
-    }
-  }, [is_open, page]);
-
-  const virtualizer = useVirtualizer({
-    count: page_items.length,
-    getScrollElement: () => scroll_ref.current,
-    estimateSize: () => 180,
-    overscan: 3,
-    measureElement: (element) => element?.getBoundingClientRect().height ?? 0,
-  });
+  if (!citations.length) {
+    return null;
+  }
 
   return (
-    <div className='kb-chat-sources'>
-      <button className='kb-chat-sources-toggle' onClick={() => set_is_open((value) => !value)} type='button'>
-        <strong>{is_open ? '隐藏来源' : '显示来源'}</strong>
-        <span>{`${citations.length} 条匹配`}</span>
+    <section className='kb-chat-sources'>
+      <button className='kb-chat-sources-toggle' onClick={() => set_open((current) => !current)} type='button'>
+        <strong>{open ? '隐藏来源' : '显示来源'}</strong>
+        <span>{`${citations.length} 条命中`}</span>
       </button>
 
-      {is_open ? (
+      {open ? (
         <div className='kb-chat-sources-body'>
-          {page_items.length ? (
-            <div className='kb-chat-sources-scroll' ref={scroll_ref}>
-              <div className='kb-virtual-list-spacer' style={{ height: `${virtualizer.getTotalSize()}px`, position: 'relative' }}>
-                {virtualizer.getVirtualItems().map((virtual_item) => {
-                  const citation = page_items[virtual_item.index];
-                  const meta_lines = resolve_source_meta(citation);
+          <div className='kb-chat-sources-scroll'>
+            {visible_citations.map((citation) => (
+              <article className='kb-chat-source-card' key={`${citation.source_id}-${citation.paragraph_id}`}>
+                <div className='kb-chat-source-head'>
+                  <strong>{citation.source_name}</strong>
+                  <span>{`匹配度 ${citation.score.toFixed(2)}`}</span>
+                </div>
 
-                  return (
-                    <div
-                      className='kb-virtual-list-item'
-                      data-index={virtual_item.index}
-                      key={`${citation.paragraph_id}-${citation.source_id}-${virtual_item.index}`}
-                      ref={virtualizer.measureElement}
-                      style={{ left: 0, position: 'absolute', top: 0, transform: `translateY(${virtual_item.start}px)`, width: '100%' }}
-                    >
-                      <article className='kb-chat-source-card'>
-                        <div className='kb-chat-source-head'>
-                          <button className='kb-link-button' onClick={() => on_open_source(citation.source_id)} type='button'>
-                            {citation.source_name}
-                          </button>
-                          <span>{`相关度 ${citation.score.toFixed(2)}`}</span>
-                        </div>
+                <p className='kb-chat-source-reason'>
+                  {citation.match_reason ?? '当前回答命中了这条来源证据。'}
+                </p>
 
-                        <ParagraphEvidencePreview render_kind={citation.render_kind} rendered_html={citation.rendered_html} text_content={citation.excerpt} />
+                <ParagraphEvidencePreview
+                  render_kind={citation.render_kind}
+                  rendered_html={citation.rendered_html}
+                  text_content={citation.excerpt}
+                />
 
-                        {meta_lines.length ? <div className='kb-chat-source-meta'>{meta_lines.map((line) => <span key={line}>{line}</span>)}</div> : null}
+                <div className='kb-chat-source-meta'>
+                  {citation.source_kind ? <span>{`类型：${citation.source_kind}`}</span> : null}
+                  {citation.worksheet_name ? <span>{`工作表：${citation.worksheet_name}`}</span> : null}
+                  {citation.page_number !== null && citation.page_number !== undefined ? (
+                    <span>{`页码：${citation.page_number}`}</span>
+                  ) : null}
+                  {citation.paragraph_position !== null && citation.paragraph_position !== undefined ? (
+                    <span>{`段落：${citation.paragraph_position + 1}`}</span>
+                  ) : null}
+                </div>
 
-                        <div className='kb-button-row'>
-                          <button className='kb-secondary-button' onClick={() => on_focus_paragraph(citation.paragraph_id)} type='button'>
-                            定位段落
-                          </button>
-                        </div>
-                      </article>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <div className='kb-empty-card'>当前回答没有可展开的来源。</div>
-          )}
+                <div className='kb-button-row'>
+                  <button
+                    className='kb-secondary-button'
+                    onClick={() =>
+                      on_view_in_graph(citation.source_id, citation.paragraph_id, {
+                        preferred_anchor_node_id: citation.preferred_anchor_node_id ?? null,
+                        anchor_node_ids: citation.anchor_node_ids ?? [],
+                      })
+                    }
+                    type='button'
+                  >
+                    在图谱中查看
+                  </button>
+                  <button
+                    className='kb-secondary-button'
+                    onClick={() => on_focus_paragraph(citation.paragraph_id)}
+                    type='button'
+                  >
+                    定位段落
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
 
-          {total_pages > 1 ? (
+          {page_count > 1 ? (
             <div className='kb-chat-sources-pagination'>
-              <button className='kb-secondary-button' disabled={page <= 1} onClick={() => set_page((value) => value - 1)} type='button'>
+              <button
+                className='kb-secondary-button'
+                disabled={page <= 1}
+                onClick={() => set_page((current) => Math.max(1, current - 1))}
+                type='button'
+              >
                 上一页
               </button>
-              <span>{`第 ${page} / ${total_pages} 页`}</span>
-              <button className='kb-secondary-button' disabled={page >= total_pages} onClick={() => set_page((value) => value + 1)} type='button'>
+              <span>{pagination_label(page, page_count)}</span>
+              <button
+                className='kb-secondary-button'
+                disabled={page >= page_count}
+                onClick={() => set_page((current) => Math.min(page_count, current + 1))}
+                type='button'
+              >
                 下一页
               </button>
             </div>
           ) : null}
         </div>
       ) : null}
-    </div>
+    </section>
   );
 }

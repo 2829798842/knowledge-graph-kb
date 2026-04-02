@@ -30,6 +30,7 @@ export function fetch_graph(options: GraphQueryOptions): Promise<KnowledgeGraphR
 export function create_graph_node(payload: {
   label: string;
   description?: string;
+  source_id?: string | null;
   metadata?: Record<string, unknown>;
 }): Promise<KnowledgeGraphNodeRecord> {
   return request_json<KnowledgeGraphNodeRecord>('/api/kb/graph/nodes', {

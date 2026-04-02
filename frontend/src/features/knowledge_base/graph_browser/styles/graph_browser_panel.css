@@ -1,6 +1,6 @@
 .kb-graph-page {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 12px;
   height: 100%;
   min-height: 0;
@@ -9,9 +9,9 @@
 .kb-graph-toolbar {
   display: grid;
   gap: 12px;
-  padding: 14px;
+  padding: 12px;
   border: 1px solid color-mix(in srgb, var(--card-border) 72%, var(--glass-border));
-  border-radius: 22px;
+  border-radius: 20px;
   background: color-mix(in srgb, var(--panel-surface) 92%, transparent);
 }
 
@@ -33,7 +33,7 @@
 }
 
 .kb-graph-toolbar-copy strong {
-  font-size: 1.22rem;
+  font-size: 1.12rem;
 }
 
 .kb-graph-toolbar-actions {
@@ -54,6 +54,56 @@
   flex: 1 1 auto;
 }
 
+.kb-graph-search-shell {
+  position: relative;
+  width: min(460px, 100%);
+}
+
+.kb-graph-search-results {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 7;
+  display: grid;
+  gap: 8px;
+  max-height: 280px;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--card-border) 72%, var(--glass-border));
+  background: color-mix(in srgb, var(--panel-surface) 96%, transparent);
+  box-shadow: var(--floating-shadow);
+}
+
+.kb-graph-search-result {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  text-align: left;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--card-border) 68%, transparent);
+  background: color-mix(in srgb, var(--card-surface) 72%, transparent);
+  color: inherit;
+}
+
+.kb-graph-search-result.is-active {
+  border-color: color-mix(in srgb, var(--accent-solid) 38%, var(--card-border));
+  background: color-mix(in srgb, var(--accent-ghost-bg) 76%, var(--card-surface));
+}
+
+.kb-graph-search-result-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kb-graph-search-result span {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
 .kb-graph-error-banner {
   padding: 10px 12px;
   border-radius: 18px;
@@ -64,12 +114,11 @@
 
 .kb-graph-stage {
   position: relative;
-  flex: 1 1 auto;
   height: 100%;
   min-height: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--card-border) 72%, var(--glass-border));
-  border-radius: 22px;
+  border-radius: 20px;
   background: color-mix(in srgb, var(--panel-surface) 92%, transparent);
 }
 
@@ -185,27 +234,27 @@
 
 .kb-graph-drawer {
   position: absolute;
-  top: 14px;
-  bottom: 14px;
+  top: 12px;
+  bottom: 12px;
   z-index: 6;
-  width: min(360px, calc(100% - 28px));
+  width: min(352px, calc(100% - 24px));
 }
 
 .kb-graph-drawer-left {
-  left: 14px;
+  left: 12px;
 }
 
 .kb-graph-drawer-right {
-  right: 14px;
+  right: 12px;
 }
 
 .kb-graph-drawer-card {
   display: grid;
   gap: 12px;
   height: 100%;
-  padding: 14px;
+  padding: 12px;
   overflow: auto;
-  border-radius: 20px;
+  border-radius: 18px;
   border: 1px solid color-mix(in srgb, var(--glass-border) 88%, var(--card-border));
   background: color-mix(in srgb, var(--glass-surface) 96%, transparent);
   backdrop-filter: blur(18px);
@@ -279,6 +328,25 @@
   gap: 8px;
 }
 
+.kb-graph-related-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.kb-graph-related-item {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent-ghost-bg) 50%, transparent);
+}
+
+.kb-graph-related-item span {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
 .kb-graph-metadata-row {
   display: flex;
   justify-content: space-between;
@@ -311,6 +379,43 @@
   font-size: 0.8rem;
 }
 
+.kb-graph-summary-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.kb-graph-summary-grid.is-edge {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.kb-graph-summary-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--card-border) 72%, var(--glass-border));
+  background: color-mix(in srgb, var(--card-surface) 78%, transparent);
+}
+
+.kb-graph-summary-list,
+.kb-graph-summary-preview-list {
+  display: grid;
+  gap: 8px;
+}
+
+.kb-graph-summary-item,
+.kb-graph-summary-preview {
+  display: grid;
+  gap: 4px;
+}
+
+.kb-graph-summary-item span,
+.kb-graph-summary-preview span {
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
 .kb-secondary-button.is-danger {
   color: var(--danger-text);
   border-color: color-mix(in srgb, var(--danger-text) 24%, var(--card-border));
@@ -326,6 +431,10 @@
 
   .kb-graph-toolbar-actions {
     justify-content: flex-start;
+  }
+
+  .kb-graph-summary-grid {
+    grid-template-columns: 1fr;
   }
 
   .kb-graph-stage {

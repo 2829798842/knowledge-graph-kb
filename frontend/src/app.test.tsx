@@ -1,10 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('./features/knowledge_base/graph_browser/components/knowledge_graph_canvas', () => ({
-  KnowledgeGraphCanvas: () => <div data-testid='graph-canvas'>graph canvas</div>,
-}));
-
 import App from './app';
 
 const fetch_mock = vi.fn(async (input: RequestInfo | URL) => {
@@ -43,17 +39,33 @@ describe('App', () => {
   it('renders the workspace shell and requests the core APIs', async () => {
     render(<App />);
 
-    expect(screen.getAllByText('Chat').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Knowledge Graph').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('知识问答').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('知识图谱').length).toBeGreaterThan(0);
 
     await waitFor(() => {
       expect(fetch_mock.mock.calls.length).toBeGreaterThanOrEqual(4);
     });
 
-    expect(fetch_mock.mock.calls.some(([request]) => request.toString().includes('/api/kb/imports/jobs'))).toBe(true);
-    expect(fetch_mock.mock.calls.some(([request]) => request.toString().includes('/api/kb/sources'))).toBe(true);
-    expect(fetch_mock.mock.calls.some(([request]) => request.toString().includes('/api/kb/graph'))).toBe(true);
-    expect(fetch_mock.mock.calls.some(([request]) => request.toString().includes('/api/kb/graph/manual-relations'))).toBe(true);
-    expect(fetch_mock.mock.calls.some(([request]) => request.toString().includes('/api/kb/chat/sessions'))).toBe(true);
+    expect(
+      fetch_mock.mock.calls.some(([request]) =>
+        request.toString().includes('/api/kb/imports/jobs'),
+      ),
+    ).toBe(true);
+    expect(
+      fetch_mock.mock.calls.some(([request]) => request.toString().includes('/api/kb/sources')),
+    ).toBe(true);
+    expect(
+      fetch_mock.mock.calls.some(([request]) => request.toString().includes('/api/kb/graph')),
+    ).toBe(true);
+    expect(
+      fetch_mock.mock.calls.some(([request]) =>
+        request.toString().includes('/api/kb/graph/manual-relations'),
+      ),
+    ).toBe(true);
+    expect(
+      fetch_mock.mock.calls.some(([request]) =>
+        request.toString().includes('/api/kb/chat/sessions'),
+      ),
+    ).toBe(true);
   });
 });

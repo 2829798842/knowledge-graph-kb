@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Graph, manual-relation, selection, and highlight state.
  */
 
@@ -159,7 +159,12 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
   }
 
   const create_node_mutation = useMutation({
-    mutationFn: (payload: { label: string; description?: string; metadata?: Record<string, unknown> }) =>
+    mutationFn: (payload: {
+      label: string;
+      description?: string;
+      source_id?: string | null;
+      metadata?: Record<string, unknown>;
+    }) =>
       create_graph_node(payload),
     onSuccess: async (node) => {
       set_message(`已创建实体：${node.label}`);
@@ -183,7 +188,7 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
       weight: number;
     }) => create_manual_relation(payload),
     onSuccess: async () => {
-      set_message('已创建手动关系。');
+      set_message('已创建手工关系。');
       set_error(null);
       await Promise.all([refresh_graph(), refresh_manual_relations()]);
     },
@@ -195,7 +200,7 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
   const remove_relation_mutation = useMutation({
     mutationFn: (relation_id: string) => delete_manual_relation(relation_id),
     onSuccess: async () => {
-      set_message('已移除手动关系。');
+      set_message('已移除手工关系。');
       set_error(null);
       await Promise.all([refresh_graph(), refresh_manual_relations()]);
     },
@@ -252,12 +257,14 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
     label: string,
     options?: {
       description?: string;
+      source_id?: string | null;
       metadata?: Record<string, unknown>;
     },
   ): Promise<void> {
     await create_node_mutation.mutateAsync({
       label,
       description: options?.description,
+      source_id: options?.source_id,
       metadata: options?.metadata,
     });
   }
@@ -320,7 +327,9 @@ export function use_graph_workspace_state(props: GraphWorkspaceStateProps) {
     if (normalized_graph_state.dropped_edge_count <= 0) {
       return;
     }
-    console.warn(`知识图谱已忽略 ${normalized_graph_state.dropped_edge_count} 条缺少端点节点的关系边。`);
+    console.warn(
+      `知识图谱已忽略 ${normalized_graph_state.dropped_edge_count} 条缺少端点节点的关系边。`,
+    );
   }, [normalized_graph_state.dropped_edge_count]);
 
   useEffect(() => {

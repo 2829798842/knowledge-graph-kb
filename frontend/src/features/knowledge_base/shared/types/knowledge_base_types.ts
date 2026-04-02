@@ -1,7 +1,6 @@
-/**
- * 知识库工作区共享类型定义。
+﻿/**
+ * Shared workspace type definitions.
  */
-
 export interface ImportChunkRecord {
   id: string;
   job_id: string;
@@ -78,6 +77,10 @@ export interface KnowledgeGraphNodeRecord {
   label: string;
   size: number;
   score: number | null;
+  display_label?: string | null;
+  kind_label?: string | null;
+  source_name?: string | null;
+  evidence_count?: number | null;
   metadata: Record<string, unknown>;
 }
 
@@ -88,6 +91,11 @@ export interface KnowledgeGraphEdgeRecord {
   type: string;
   label: string;
   weight: number;
+  display_label?: string | null;
+  relation_kind_label?: string | null;
+  source_name?: string | null;
+  evidence_paragraph_id?: string | null;
+  is_structural?: boolean | null;
   metadata: Record<string, unknown>;
 }
 
@@ -128,6 +136,15 @@ export interface AnswerCitationRecord {
   source_name: string;
   excerpt: string;
   score: number;
+  match_reason?: string | null;
+  matched_fields?: string[];
+  source_kind?: string | null;
+  worksheet_name?: string | null;
+  page_number?: number | null;
+  paragraph_position?: number | null;
+  winning_lane?: string | null;
+  anchor_node_ids?: string[];
+  preferred_anchor_node_id?: string | null;
   render_kind: ParagraphRenderKind;
   rendered_html: string | null;
   render_metadata: Record<string, unknown>;
@@ -305,3 +322,10 @@ export type ImportMode = 'upload' | 'paste' | 'scan' | 'openie' | 'convert';
 export type QueryMode = 'answer' | 'record' | 'entity' | 'relation' | 'source';
 export type GraphViewportMode = 'fit-all' | 'focus-selection';
 export type GraphDrawerMode = 'filters' | 'create-node' | 'relation' | 'inspector' | null;
+export type GraphLayerMode = 'semantic' | 'evidence' | 'structure';
+export type GraphViewMode = 'global' | 'local';
+
+export interface LocalGraphState {
+  anchor_node_id: string | null;
+  depth: 1;
+}

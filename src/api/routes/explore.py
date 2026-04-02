@@ -48,6 +48,7 @@ def create_graph_node(
         node = graph_service.create_manual_entity(
             label=payload.label,
             description=payload.description,
+            source_id=payload.source_id,
             metadata=payload.metadata,
         )
     except ValueError as exc:

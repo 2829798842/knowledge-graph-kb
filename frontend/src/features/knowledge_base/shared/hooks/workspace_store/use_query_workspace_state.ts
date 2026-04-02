@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Query execution and query-result state.
  */
 

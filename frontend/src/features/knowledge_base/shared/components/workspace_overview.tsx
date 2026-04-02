@@ -1,11 +1,8 @@
-import type { ThemeMode } from '../../../../theme';
 import { WORKSPACE_TABS } from '../config/ui_constants';
 import { use_workspace_shell } from '../hooks/use_workspace_shell';
 
 interface WorkspaceOverviewProps {
   collapsed: boolean;
-  theme_mode: ThemeMode;
-  set_theme_mode: (theme_mode: ThemeMode) => void;
 }
 
 const TAB_ICONS = {
@@ -28,9 +25,9 @@ export function WorkspaceOverview(props: WorkspaceOverviewProps) {
           KG
         </div>
         <div className='kb-sidebar-brand-copy'>
-          <span className='kb-context-label'>Knowledge Graph KB</span>
+          <span className='kb-context-label'>知识图谱知识库</span>
           <strong>知识图谱工作区</strong>
-          <p>在对话和图谱之间快速切换，主内容区保持满宽聚焦。</p>
+          <p>在对话和图谱之间快速切换，让主内容区始终保持聚焦。</p>
         </div>
       </div>
 

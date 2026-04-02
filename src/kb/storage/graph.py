@@ -20,7 +20,7 @@ class GraphStore:
         description: str,
         metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        canonical_name = normalize_entity_name(display_name)
+        canonical_name = self._canonical_entity_name(display_name=display_name, metadata=metadata)
         now = utc_now_iso()
         with self.gateway.transaction() as connection:
             existing_row = connection.execute(
@@ -90,7 +90,7 @@ class GraphStore:
         metadata: dict[str, Any] | None = None,
         appearance_count: int = 0,
     ) -> dict[str, Any]:
-        canonical_name = normalize_entity_name(display_name)
+        canonical_name = self._canonical_entity_name(display_name=display_name, metadata=metadata)
         if not canonical_name:
             raise ValueError("实体名称不能为空。")
         if self.gateway.fetch_one("SELECT id FROM entities WHERE canonical_name = ?", (canonical_name,)) is not None:
@@ -362,19 +362,20 @@ class GraphStore:
             return None
 
         normalized_name = normalize_entity_name(display_name)
-        if not normalized_name:
+        next_metadata = row["metadata"] if metadata is None else metadata
+        canonical_name = self._canonical_entity_name(display_name=display_name, metadata=next_metadata)
+        if not canonical_name:
             raise ValueError("实体名称不能为空。")
 
         with self.gateway.transaction() as connection:
             duplicate = connection.execute(
                 "SELECT id FROM entities WHERE canonical_name = ? AND id != ?",
-                (normalized_name, entity_id),
+                (canonical_name, entity_id),
             ).fetchone()
             if duplicate is not None:
                 raise ValueError("已存在同名实体，请使用其他名称。")
 
             next_description = row["description"] if description is None else description
-            next_metadata = row["metadata"] if metadata is None else metadata
             connection.execute(
                 """
                 UPDATE entities
@@ -383,7 +384,7 @@ class GraphStore:
                 """,
                 (
                     display_name.strip(),
-                    normalized_name,
+                    canonical_name,
                     next_description,
                     self.gateway.dump_json(next_metadata),
                     utc_now_iso(),
@@ -559,39 +560,49 @@ class GraphStore:
             JOIN entities AS subject_entity ON subject_entity.id = relations.subject_entity_id
             JOIN entities AS object_entity ON object_entity.id = relations.object_entity_id
         """
-        if source_ids:
-            return self.gateway.fetch_all(
-                base_sql
-                + f"""
-                WHERE relations.source_paragraph_id IN (
-                    SELECT id FROM paragraphs WHERE source_id IN ({placeholders(source_ids)})
-                )
-                ORDER BY relations.created_at DESC
-                """,
-                tuple(source_ids),
+        rows = self.gateway.fetch_all(base_sql + " ORDER BY relations.created_at DESC")
+        if not source_ids:
+            return rows
+
+        source_id_set = {str(source_id).strip() for source_id in source_ids if str(source_id).strip()}
+        if not source_id_set:
+            return []
+
+        paragraph_ids = [
+            paragraph_id
+            for paragraph_id in (
+                str(row.get("source_paragraph_id") or "").strip()
+                for row in rows
             )
-        return self.gateway.fetch_all(base_sql + " ORDER BY relations.created_at DESC")
+            if paragraph_id
+        ]
+        paragraph_source_by_id: dict[str, str] = {}
+        if paragraph_ids:
+            paragraph_source_by_id = {
+                str(paragraph["id"]): str(paragraph.get("source_id") or "").strip()
+                for paragraph in self.gateway.fetch_all(
+                    f"SELECT id, source_id FROM paragraphs WHERE id IN ({placeholders(paragraph_ids)})",
+                    tuple(paragraph_ids),
+                )
+            }
+
+        filtered_rows: list[dict[str, Any]] = []
+        for row in rows:
+            metadata = dict(row.get("metadata") or {})
+            relation_source_id = str(metadata.get("source_id") or "").strip()
+            if relation_source_id in source_id_set:
+                filtered_rows.append(row)
+                continue
+            source_paragraph_id = str(row.get("source_paragraph_id") or "").strip()
+            if source_paragraph_id and paragraph_source_by_id.get(source_paragraph_id) in source_id_set:
+                filtered_rows.append(row)
+        return filtered_rows
 
     def list_relations_for_source(self, source_id: str, *, limit: int | None = 20) -> list[dict[str, Any]]:
-        sql = """
-            SELECT
-                relations.*,
-                subject_entity.display_name AS subject_name,
-                object_entity.display_name AS object_name
-            FROM relations
-            JOIN entities AS subject_entity ON subject_entity.id = relations.subject_entity_id
-            JOIN entities AS object_entity ON object_entity.id = relations.object_entity_id
-            JOIN paragraphs ON paragraphs.id = relations.source_paragraph_id
-            WHERE paragraphs.source_id = ?
-            ORDER BY relations.created_at DESC
-        """
-        params: tuple[Any, ...]
+        relations = self.list_graph_relations([source_id])
         if limit is None:
-            params = (source_id,)
-        else:
-            sql += "\n            LIMIT ?"
-            params = (source_id, limit)
-        return self.gateway.fetch_all(sql, params)
+            return relations
+        return relations[:limit]
 
     def list_relations_for_paragraph(self, paragraph_id: str) -> list[dict[str, Any]]:
         return self.gateway.fetch_all(
@@ -721,6 +732,22 @@ class GraphStore:
                 (relation_id,),
             )
         return self.gateway.fetch_all("SELECT * FROM paragraph_relations")
+
+    def _canonical_entity_name(self, *, display_name: str, metadata: dict[str, Any] | None) -> str:
+        normalized_name = normalize_entity_name(display_name)
+        if not normalized_name:
+            return ""
+        if self._entity_is_source_scoped(metadata):
+            source_id = str(dict(metadata or {}).get("source_id") or "").strip()
+            return f"source:{source_id}::{normalized_name}"
+        return normalized_name
+
+    def _entity_is_source_scoped(self, metadata: dict[str, Any] | None) -> bool:
+        metadata_dict = dict(metadata or {})
+        source_id = str(metadata_dict.get("source_id") or "").strip()
+        if not source_id:
+            return False
+        return True
 
 
 

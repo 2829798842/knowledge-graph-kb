@@ -1,29 +1,30 @@
+import {
+  compact_selected_source_summary,
+  format_source_display_name,
+} from '../../graph_browser/components/graph_browser_utils';
 import { WORKSPACE_LABELS } from '../config/ui_constants';
 import { use_knowledge_base_workspace_context } from '../context/knowledge_base_workspace_context';
 
 const ACTIVE_TASK_STATUSES: Set<string> = new Set(['queued', 'running']);
 const AVAILABLE_SOURCE_STATUSES: Set<string> = new Set(['ready', 'partial']);
 
-function preview_source_names(values: string[], max_count: number): string {
-  if (!values.length) {
-    return '全部来源';
-  }
-  if (values.length <= max_count) {
-    return values.join('、');
-  }
-  return `${values.slice(0, max_count).join('、')} 等 ${values.length} 个来源`;
-}
-
 export function use_workspace_shell() {
   const workspace = use_knowledge_base_workspace_context();
 
   const active_task_count = workspace.tasks.filter((task) => ACTIVE_TASK_STATUSES.has(task.status)).length;
   const available_source_count = workspace.sources.filter((source) => AVAILABLE_SOURCE_STATUSES.has(source.status)).length;
-  const selected_source_names = workspace.sources
-    .filter((source) => workspace.selected_source_ids.includes(source.id))
-    .map((source) => source.name);
-  const selected_node_label = workspace.graph.nodes.find((node) => node.id === workspace.selected_node_id)?.label ?? null;
-  const selected_edge_label = workspace.graph.edges.find((edge) => edge.id === workspace.selected_edge_id)?.label ?? null;
+  const selected_sources = workspace.sources.filter((source) => workspace.selected_source_ids.includes(source.id));
+  const selected_source_names = selected_sources.map((source) =>
+    format_source_display_name(source, workspace.sources),
+  );
+  const selected_node_label =
+    workspace.graph.nodes.find((node) => node.id === workspace.selected_node_id)?.display_label ??
+    workspace.graph.nodes.find((node) => node.id === workspace.selected_node_id)?.label ??
+    null;
+  const selected_edge_label =
+    workspace.graph.edges.find((edge) => edge.id === workspace.selected_edge_id)?.display_label ??
+    workspace.graph.edges.find((edge) => edge.id === workspace.selected_edge_id)?.label ??
+    null;
   const focus_summary =
     selected_node_label ??
     selected_edge_label ??
@@ -46,7 +47,8 @@ export function use_workspace_shell() {
     highlight_node_count: workspace.highlighted_node_ids.length,
     highlight_edge_count: workspace.highlighted_edge_ids.length,
     focus_summary,
-    selected_source_summary: preview_source_names(selected_source_names, 3),
+    selected_source_names,
+    selected_source_summary: compact_selected_source_summary(workspace.selected_source_ids, workspace.sources, 3),
     source_density: workspace.density,
     include_paragraphs: workspace.include_paragraphs,
     sidebar_collapsed: workspace.sidebar_collapsed,

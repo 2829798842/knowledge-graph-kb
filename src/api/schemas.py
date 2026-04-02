@@ -1,4 +1,4 @@
-﻿"""閲嶆瀯鍚?HTTP API 浣跨敤鐨?Pydantic 妯″瀷銆"""
+﻿"""HTTP API Pydantic models."""
 
 from typing import Any, Literal
 
@@ -114,6 +114,10 @@ class GraphNodeItem(BaseModel):
     label: str
     size: float
     score: float | None = None
+    display_label: str | None = None
+    kind_label: str | None = None
+    source_name: str | None = None
+    evidence_count: int | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -124,6 +128,11 @@ class GraphEdgeItem(BaseModel):
     type: str
     label: str
     weight: float
+    display_label: str | None = None
+    relation_kind_label: str | None = None
+    source_name: str | None = None
+    evidence_paragraph_id: str | None = None
+    is_structural: bool | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -152,6 +161,7 @@ class GraphNodeUpdateRequest(BaseModel):
 class GraphNodeCreateRequest(BaseModel):
     label: str
     description: str = ""
+    source_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -190,6 +200,15 @@ class CitationItem(BaseModel):
     source_name: str
     excerpt: str
     score: float
+    match_reason: str | None = None
+    matched_fields: list[str] = Field(default_factory=list)
+    source_kind: str | None = None
+    worksheet_name: str | None = None
+    page_number: int | None = None
+    paragraph_position: int | None = None
+    winning_lane: str | None = None
+    anchor_node_ids: list[str] = Field(default_factory=list)
+    preferred_anchor_node_id: str | None = None
     render_kind: Literal["text", "row_record", "sheet_summary"] = "text"
     rendered_html: str | None = None
     render_metadata: dict[str, Any] = Field(default_factory=dict)

@@ -1,7 +1,3 @@
-/**
- * Shared loading state for lazily loaded workspaces.
- */
-
 interface WorkspaceLoadingStateProps {
   title: string;
   description: string;
@@ -13,7 +9,7 @@ export function WorkspaceLoadingState(props: WorkspaceLoadingStateProps) {
   return (
     <div className='kb-loading-state'>
       <div className='kb-loading-copy'>
-        <span className='kb-context-label'>Loading Workspace</span>
+        <span className='kb-context-label'>正在加载工作区</span>
         <strong>{title}</strong>
         <p>{description}</p>
       </div>

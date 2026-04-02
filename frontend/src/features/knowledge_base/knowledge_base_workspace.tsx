@@ -14,15 +14,15 @@ interface KnowledgeBaseWorkspaceProps {
   set_theme_mode: (theme_mode: ThemeMode) => void;
 }
 
-const MIN_SIDEBAR_WIDTH = 216;
-const MAX_SIDEBAR_WIDTH = 280;
+const MIN_SIDEBAR_WIDTH = 220;
+const MAX_SIDEBAR_WIDTH = 272;
 
 function clamp_sidebar_width(value: number): number {
   return Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, value));
 }
 
 function KnowledgeBaseWorkspaceShell(props: KnowledgeBaseWorkspaceProps) {
-  const { theme_mode, resolved_theme, set_theme_mode } = props;
+  const { resolved_theme } = props;
   const { sidebar_collapsed, set_sidebar_collapsed, sidebar_width, set_sidebar_width } = use_workspace_shell();
   const shell_ref = useRef<HTMLElement | null>(null);
   const drag_state_ref = useRef<{ offset_left: number } | null>(null);
@@ -32,6 +32,7 @@ function KnowledgeBaseWorkspaceShell(props: KnowledgeBaseWorkspaceProps) {
       if (!drag_state_ref.current) {
         return;
       }
+
       set_sidebar_width(clamp_sidebar_width(event.clientX - drag_state_ref.current.offset_left));
     }
 
@@ -83,11 +84,20 @@ function KnowledgeBaseWorkspaceShell(props: KnowledgeBaseWorkspaceProps) {
       <div aria-hidden='true' className='kb-shell-ambient kb-shell-ambient-b' />
       <div aria-hidden='true' className='kb-shell-ambient kb-shell-ambient-c' />
 
-      <section className={`kb-shell ${sidebar_collapsed ? 'is-sidebar-collapsed' : ''}`} ref={shell_ref} style={shell_style}>
+      <section
+        className={`kb-shell ${sidebar_collapsed ? 'is-sidebar-collapsed' : ''}`}
+        ref={shell_ref}
+        style={shell_style}
+      >
         {!sidebar_collapsed ? (
           <div className='kb-sidebar-shell'>
-            <WorkspaceOverview collapsed={false} set_theme_mode={set_theme_mode} theme_mode={theme_mode} />
-            <button aria-label='调整侧栏宽度' className='kb-sidebar-resizer' onPointerDown={handle_start_resize} type='button' />
+            <WorkspaceOverview collapsed={false} />
+            <button
+              aria-label='调整侧栏宽度'
+              className='kb-sidebar-resizer'
+              onPointerDown={handle_start_resize}
+              type='button'
+            />
           </div>
         ) : null}
 

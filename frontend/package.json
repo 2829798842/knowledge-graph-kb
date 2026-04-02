@@ -13,7 +13,10 @@
   "dependencies": {
     "@tanstack/react-query": "^5.90.5",
     "@tanstack/react-virtual": "^3.13.12",
-    "cytoscape": "^3.33.1",
+    "@types/d3-force": "^3.0.10",
+    "d3-force": "^3.0.0",
+    "pixi-viewport": "^6.0.3",
+    "pixi.js": "^8.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

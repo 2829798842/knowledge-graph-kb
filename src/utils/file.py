@@ -1,20 +1,18 @@
-﻿"""
-鎻愪緵鏂囦欢鍚嶆竻娲楃瓑杞婚噺绾ф枃浠跺伐鍏峰嚱鏁般€?
-"""
+"""提供文件名清洗等轻量级文件工具函数。"""
+
 import re
 
 SAFE_FILENAME_PATTERN: re.Pattern[str] = re.compile(r"[^A-Za-z0-9_.-]+")
 
 
 def sanitize_filename(filename: str) -> str:
-    """娓呮礂鏂囦欢鍚嶏紝閬垮厤鐗规畩瀛楃褰卞搷钀界洏銆?
+    """清洗文件名，避免特殊字符影响落盘。
 
     Args:
-        filename: 鍘熷鏂囦欢鍚嶃€?
+        filename: 原始文件名。
 
     Returns:
-        str: 浠呬繚鐣欏畨鍏ㄥ瓧绗﹀悗鐨勬枃浠跺悕銆?
+        str: 仅保留安全字符后的文件名。
     """
 
     return SAFE_FILENAME_PATTERN.sub("_", filename)
-

@@ -20,6 +20,20 @@ def import_sample_source(client: TestClient) -> dict:
     return response.json()["job"]
 
 
+def import_named_source(client: TestClient, *, title: str, content: str) -> dict:
+    response = client.post(
+        "/api/kb/imports/paste",
+        json={
+            "title": title,
+            "content": content,
+            "strategy": "auto",
+            "metadata": {"filename": f"{title}.txt"},
+        },
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["job"]
+
+
 def test_import_job_source_update_graph_create_and_backup(client: TestClient, tmp_path: Path) -> None:
     job = import_sample_source(client)
 
@@ -79,3 +93,27 @@ def test_import_job_source_update_graph_create_and_backup(client: TestClient, tm
     restore_result = restore_backup(settings=restore_settings, backup_dir=backup_dir, force=True)
     assert restore_result["status"] == "ok"
     assert (restore_settings.resolved_kb_db_path).exists()
+
+
+def test_graph_keeps_relations_visible_and_isolates_entities_per_source(client: TestClient) -> None:
+    import_named_source(client, title="Alpha Source One", content="Alpha 依赖 Beta。")
+    import_named_source(client, title="Alpha Source Two", content="Alpha 为 Beta 提供支持。")
+
+    sources_response = client.get("/api/kb/sources")
+    assert sources_response.status_code == 200, sources_response.text
+    source_rows = {item["name"]: item["id"] for item in sources_response.json()}
+
+    source_one_id = source_rows["Alpha Source One"]
+    source_two_id = source_rows["Alpha Source Two"]
+
+    graph_one = client.get("/api/kb/graph", params=[("source_ids", source_one_id)]).json()
+    graph_two = client.get("/api/kb/graph", params=[("source_ids", source_two_id)]).json()
+
+    entity_ids_one = {node["id"] for node in graph_one["nodes"] if node["type"] == "entity"}
+    entity_ids_two = {node["id"] for node in graph_two["nodes"] if node["type"] == "entity"}
+
+    assert entity_ids_one
+    assert entity_ids_two
+    assert entity_ids_one.isdisjoint(entity_ids_two)
+    assert any(edge["type"] == "relation" for edge in graph_one["edges"])
+    assert any(edge["type"] == "relation" for edge in graph_two["edges"])

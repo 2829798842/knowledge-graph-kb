@@ -1,4 +1,4 @@
-"""问答服务"""
+﻿"""Answer service."""
 
 from time import perf_counter
 from typing import Any
@@ -24,14 +24,14 @@ from src.utils.logger import get_logger
 from ..retrieval.hybrid import HybridAnswerRetriever
 from ..retrieval.types import ParagraphHit, RetrievalLaneTrace, RetrievalRequest, RetrievalTrace
 
-EMPTY_QUERY_MESSAGE = "请输入问题后再查询。"
-NO_HIT_MESSAGE = "当前知识库中没有命中相关段落。"
-STALE_INDEX_MESSAGE = "当前向量索引与嵌入模型不匹配，请重新导入后再试。"
+EMPTY_QUERY_MESSAGE = "请输入问题后再发起问答。"
+NO_HIT_MESSAGE = "知识库中没有找到相关段落。"
+STALE_INDEX_MESSAGE = "向量索引与当前嵌入模型不一致，请重新导入后再试。"
 logger = get_logger(__name__)
 
 
 class AnswerService:
-    """处理问答检索 证据整形 与模型回答"""
+    """Coordinate retrieval, evidence shaping, and answer generation."""
 
     def __init__(
         self,
@@ -59,7 +59,7 @@ class AnswerService:
     ) -> dict[str, Any]:
         normalized_query = str(query or "").strip()
         logger.debug(
-            "问答请求开始：query_length=%s source_count=%s worksheet_count=%s top_k=%s history_turn_count=%s",
+            "Answer request started: query_length=%s source_count=%s worksheet_count=%s top_k=%s history_turn_count=%s",
             len(normalized_query),
             len(source_ids or []),
             len(worksheet_names or []),
@@ -71,7 +71,7 @@ class AnswerService:
             return self._empty_response(
                 EMPTY_QUERY_MESSAGE,
                 status="empty_query",
-                execution_message="问题为空，系统未执行检索，也未调用模型。",
+                execution_message="问题为空，系统已跳过检索和生成。",
             )
 
         request = RetrievalRequest(
@@ -91,11 +91,11 @@ class AnswerService:
                 STALE_INDEX_MESSAGE,
                 status="stale_index",
                 retrieval_mode="vector",
-                execution_message="向量索引失效，系统未调用模型。",
+                execution_message="向量索引已失效，系统已跳过模型生成。",
                 retrieval_trace=self._empty_trace().to_dict(),
             )
         logger.debug(
-            "问答检索完成：retrieval_mode=%s hit_count=%s total_ms=%s structured_hits=%s vector_hits=%s ppr_hits=%s",
+            "Answer retrieval finished: retrieval_mode=%s hit_count=%s total_ms=%s structured_hits=%s vector_hits=%s ppr_hits=%s",
             retrieval_result.retrieval_mode,
             len(retrieval_result.hits),
             retrieval_result.trace.total_ms,
@@ -113,7 +113,7 @@ class AnswerService:
             return self._empty_response(
                 NO_HIT_MESSAGE,
                 retrieval_mode=retrieval_result.retrieval_mode,
-                execution_message="知识库未命中可用段落，系统未调用模型。",
+                execution_message="没有找到可用段落，系统已跳过模型生成。",
                 retrieval_trace=retrieval_result.trace.to_dict(),
             )
 
@@ -130,7 +130,7 @@ class AnswerService:
     def hydrate_citations(self, citations: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not citations:
             return []
-        logger.debug("开始补全问答引用渲染：citation_count=%s", len(citations))
+        logger.debug("Hydrating citations: citation_count=%s", len(citations))
         paragraph_ids = [
             str(item.get("paragraph_id") or "").strip()
             for item in citations
@@ -141,11 +141,16 @@ class AnswerService:
 
         paragraphs = self.answer_read_store.get_paragraphs_with_sources(paragraph_ids)
         paragraph_by_id = {str(row["id"]): row for row in paragraphs}
+        entity_links = self.answer_read_store.list_entity_links_for_paragraphs(paragraph_ids)
+        entity_links_by_paragraph: dict[str, list[dict[str, Any]]] = {}
+        for link in entity_links:
+            entity_links_by_paragraph.setdefault(str(link["paragraph_id"]), []).append(link)
         record_rows_by_paragraph, worksheet_rows_by_ref = self._load_render_context(paragraph_ids)
         logger.debug(
-            "问答引用渲染上下文已加载：citation_count=%s paragraph_count=%s record_row_count=%s worksheet_window_count=%s",
+            "Citation hydration context loaded: citation_count=%s paragraph_count=%s entity_link_count=%s record_row_count=%s worksheet_window_count=%s",
             len(citations),
             len(paragraphs),
+            len(entity_links),
             len(record_rows_by_paragraph),
             len(worksheet_rows_by_ref),
         )
@@ -161,22 +166,55 @@ class AnswerService:
             record_row = record_rows_by_paragraph.get(paragraph_id)
             worksheet_rows = self._worksheet_rows_for_record(record_row, worksheet_rows_by_ref)
             excerpt = str(paragraph.get("content") or "")[:420]
+            anchor_node_ids = self._normalize_anchor_node_ids(
+                citation.get("anchor_node_ids"),
+                fallback=self._citation_anchor_node_ids(entity_links_by_paragraph.get(paragraph_id, [])),
+            )
+            preferred_anchor_node_id = self._preferred_anchor_node_id(
+                citation.get("preferred_anchor_node_id"),
+                anchor_node_ids=anchor_node_ids,
+            )
+            render_payload = build_paragraph_render_payload(
+                paragraph=paragraph,
+                worksheet_rows=worksheet_rows,
+                highlighted_columns=list(
+                    dict(citation.get("render_metadata") or {}).get("highlighted_columns") or []
+                ),
+            )
             hydrated.append(
                 {
                     **citation,
                     "source_id": str(paragraph.get("source_id") or citation.get("source_id") or ""),
                     "source_name": str(paragraph.get("source_name") or citation.get("source_name") or ""),
-                    "excerpt": excerpt or str(citation.get("excerpt") or ""),
-                    **build_paragraph_render_payload(
-                        paragraph=paragraph,
-                        worksheet_rows=worksheet_rows,
-                        highlighted_columns=list(
-                            dict(citation.get("render_metadata") or {}).get("highlighted_columns") or []
-                        ),
+                    "source_kind": str(
+                        paragraph.get("source_kind") or citation.get("source_kind") or ""
+                    )
+                    or None,
+                    "worksheet_name": self._worksheet_name_from_payload(
+                        paragraph,
+                        render_payload,
+                        citation,
                     ),
+                    "page_number": self._optional_int(
+                        dict(paragraph.get("metadata") or {}).get("page_number")
+                        or dict(render_payload.get("render_metadata") or {}).get("page_number")
+                        or citation.get("page_number")
+                    ),
+                    "paragraph_position": self._optional_int(
+                        paragraph.get("position") or citation.get("paragraph_position")
+                    ),
+                    "winning_lane": str(citation.get("winning_lane") or "").strip() or None,
+                    "anchor_node_ids": anchor_node_ids,
+                    "preferred_anchor_node_id": preferred_anchor_node_id,
+                    "matched_fields": self._normalize_string_list(
+                        citation.get("matched_fields")
+                        or dict(render_payload.get("render_metadata") or {}).get("highlighted_columns")
+                    ),
+                    "excerpt": excerpt or str(citation.get("excerpt") or ""),
+                    **render_payload,
                 }
             )
-        logger.debug("问答引用渲染补全完成：citation_count=%s", len(hydrated))
+        logger.debug("Citation hydration finished: citation_count=%s", len(hydrated))
         return hydrated
 
     def _build_answer_response(
@@ -196,7 +234,7 @@ class AnswerService:
         entity_links = self.answer_read_store.list_entity_links_for_paragraphs(paragraph_ids)
         relation_links = self.answer_read_store.list_relation_links_for_paragraphs(paragraph_ids)
         logger.debug(
-            "问答结果整形开始：paragraph_id_count=%s paragraph_count=%s entity_link_count=%s relation_link_count=%s",
+            "Shaping answer result: paragraph_id_count=%s paragraph_count=%s entity_link_count=%s relation_link_count=%s",
             len(paragraph_ids),
             len(paragraphs),
             len(entity_links),
@@ -229,8 +267,11 @@ class AnswerService:
                 for value in list(hit.metadata.get("matched_cells") or [])
                 if str(value).strip()
             ]
+            anchor_node_ids = self._citation_anchor_node_ids(
+                entity_links_by_paragraph.get(hit.paragraph_id, []),
+            )
             logger.debug(
-                "处理问答命中段落：paragraph_id=%s score=%s retriever=%s match_type=%s matched_column_count=%s worksheet_window_row_count=%s",
+                "Processing answer hit paragraph: paragraph_id=%s score=%s retriever=%s match_type=%s matched_column_count=%s worksheet_window_row_count=%s",
                 hit.paragraph_id,
                 hit.score,
                 hit.retriever,
@@ -239,6 +280,11 @@ class AnswerService:
                 len(worksheet_rows),
             )
 
+            render_payload = build_paragraph_render_payload(
+                paragraph=paragraph,
+                worksheet_rows=worksheet_rows,
+                highlighted_columns=matched_columns,
+            )
             citations.append(
                 {
                     "paragraph_id": hit.paragraph_id,
@@ -246,11 +292,25 @@ class AnswerService:
                     "source_name": source_name,
                     "excerpt": excerpt,
                     "score": float(hit.score),
-                    **build_paragraph_render_payload(
-                        paragraph=paragraph,
-                        worksheet_rows=worksheet_rows,
-                        highlighted_columns=matched_columns,
+                    "match_reason": self._citation_match_reason(
+                        retriever=hit.retriever,
+                        match_type=hit.match_type,
                     ),
+                    "matched_fields": self._normalize_string_list(matched_columns),
+                    "source_kind": str(paragraph.get("source_kind") or "").strip() or None,
+                    "worksheet_name": self._worksheet_name_from_payload(paragraph, render_payload),
+                    "page_number": self._optional_int(
+                        dict(paragraph.get("metadata") or {}).get("page_number")
+                        or dict(render_payload.get("render_metadata") or {}).get("page_number")
+                    ),
+                    "paragraph_position": self._optional_int(paragraph.get("position")),
+                    "winning_lane": str(hit.retriever or "").strip() or None,
+                    "anchor_node_ids": anchor_node_ids,
+                    "preferred_anchor_node_id": self._preferred_anchor_node_id(
+                        None,
+                        anchor_node_ids=anchor_node_ids,
+                    ),
+                    **render_payload,
                 }
             )
             context_blocks.append({"document_name": source_name, "excerpt": excerpt})
@@ -274,11 +334,11 @@ class AnswerService:
             return self._empty_response(
                 NO_HIT_MESSAGE,
                 retrieval_mode=retrieval_mode,
-                execution_message="检索结果为空，系统未调用模型。",
+                execution_message="没有找到可用段落，系统已跳过模型生成。",
                 retrieval_trace=retrieval_trace.to_dict(),
             )
         logger.debug(
-            "问答证据整形完成：citation_count=%s context_block_count=%s highlighted_node_count=%s highlighted_edge_count=%s",
+            "Answer evidence shaped: citation_count=%s context_block_count=%s highlighted_node_count=%s highlighted_edge_count=%s",
             len(citations),
             len(context_blocks),
             len(highlighted_node_ids),
@@ -309,7 +369,7 @@ class AnswerService:
             total_ms,
         )
         logger.debug(
-            "问答完成详情：answer_length=%s highlighted_node_count=%s highlighted_edge_count=%s",
+            "Answer details: answer_length=%s highlighted_node_count=%s highlighted_edge_count=%s",
             len(answer_text),
             len(highlighted_node_ids),
             len(highlighted_edge_ids),
@@ -324,7 +384,7 @@ class AnswerService:
                 retrieval_mode=retrieval_mode,
                 model_invoked=True,
                 matched_paragraph_count=len(citations),
-                message=f"系统命中 {len(citations)} 条证据并已生成回答。",
+                message=f"系统已基于 {len(citations)} 条证据生成回答。",
             ),
             "retrieval_trace": retrieval_trace.to_dict(),
         }
@@ -347,7 +407,7 @@ class AnswerService:
         ]
         worksheet_rows_by_ref = self.record_store.list_rows_in_windows(row_windows, radius=1)
         logger.debug(
-            "问答表格渲染上下文加载完成：paragraph_id_count=%s record_row_count=%s window_request_count=%s worksheet_window_count=%s",
+            "Table render context loaded: paragraph_id_count=%s record_row_count=%s window_request_count=%s worksheet_window_count=%s",
             len(paragraph_ids),
             len(record_rows_by_paragraph),
             len(row_windows),
@@ -375,10 +435,109 @@ class AnswerService:
             render_kind = RENDER_KIND_TEXT
         return {
             **citation,
+            "match_reason": str(citation.get("match_reason") or "").strip() or None,
+            "matched_fields": self._normalize_string_list(citation.get("matched_fields")),
+            "source_kind": str(citation.get("source_kind") or "").strip() or None,
+            "worksheet_name": str(citation.get("worksheet_name") or "").strip() or None,
+            "page_number": self._optional_int(citation.get("page_number")),
+            "paragraph_position": self._optional_int(citation.get("paragraph_position")),
+            "winning_lane": str(citation.get("winning_lane") or "").strip() or None,
+            "anchor_node_ids": self._normalize_anchor_node_ids(citation.get("anchor_node_ids")),
+            "preferred_anchor_node_id": self._preferred_anchor_node_id(
+                citation.get("preferred_anchor_node_id"),
+                anchor_node_ids=self._normalize_anchor_node_ids(citation.get("anchor_node_ids")),
+            ),
             "render_kind": render_kind,
             "rendered_html": citation.get("rendered_html"),
             "render_metadata": dict(citation.get("render_metadata") or {}),
         }
+
+    def _citation_anchor_node_ids(self, entity_links: list[dict[str, Any]]) -> list[str]:
+        anchors: list[str] = []
+        seen: set[str] = set()
+        for link in entity_links:
+            entity_id = str(link.get("entity_id") or "").strip()
+            if not entity_id:
+                continue
+            node_id = f"entity:{entity_id}"
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+            anchors.append(node_id)
+        return anchors
+
+    def _normalize_anchor_node_ids(self, value: Any, *, fallback: list[str] | None = None) -> list[str]:
+        anchors = [
+            node_id
+            for node_id in (str(item).strip() for item in list(value or []))
+            if node_id.startswith("entity:")
+        ]
+        if anchors:
+            return self._deduplicate(anchors)
+        return list(fallback or [])
+
+    def _preferred_anchor_node_id(
+        self,
+        value: Any,
+        *,
+        anchor_node_ids: list[str],
+    ) -> str | None:
+        preferred = str(value or "").strip()
+        if preferred:
+            return preferred
+        if len(anchor_node_ids) == 1:
+            return anchor_node_ids[0]
+        return None
+
+    def _normalize_string_list(self, value: Any) -> list[str]:
+        return [
+            text
+            for text in (str(item).strip() for item in list(value or []))
+            if text
+        ]
+
+    def _optional_int(self, value: Any) -> int | None:
+        if value is None or value == "":
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _worksheet_name_from_payload(
+        self,
+        paragraph: dict[str, Any],
+        render_payload: dict[str, Any],
+        citation: dict[str, Any] | None = None,
+    ) -> str | None:
+        metadata = dict(paragraph.get("metadata") or {})
+        render_metadata = dict(render_payload.get("render_metadata") or {})
+        fallback = dict(citation or {})
+        worksheet_name = (
+            str(render_metadata.get("worksheet_name") or "").strip()
+            or str(metadata.get("worksheet_name") or "").strip()
+            or str(fallback.get("worksheet_name") or "").strip()
+        )
+        return worksheet_name or None
+
+    def _citation_match_reason(self, *, retriever: str, match_type: str) -> str:
+        match_type_map = {
+            "record_key_exact": "精确命中记录键",
+            "cell_exact": "精确命中表格单元格",
+            "cell_partial": "部分命中表格单元格",
+            "token_overlap": "结构化字段词项重叠",
+            "semantic": "语义向量命中",
+        }
+        if match_type in match_type_map:
+            return match_type_map[match_type]
+
+        retriever_map = {
+            "structured": "结构化检索命中",
+            "vector": "向量检索命中",
+            "hybrid": "融合排序保留",
+            "ppr": "图谱扩散命中",
+        }
+        return retriever_map.get(retriever, "检索命中")
 
     def _build_execution(
         self,

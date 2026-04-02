@@ -1,263 +1,190 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
+import { useMemo, useRef, useState, type FormEvent } from 'react';
 
-import { use_import_center } from '../../import_center/hooks/use_import_center';
 import { ModelConfigModal } from '../../model_config/components/model_config_modal';
-import { SUPPORTED_UPLOAD_ACCEPT } from '../../shared/config/ui_constants';
+import { selected_source_summary } from '../../graph_browser/components/graph_browser_utils';
+import { QUERY_MODE_OPTIONS } from '../../shared/config/ui_constants';
 import { use_knowledge_base_workspace_context } from '../../shared/context/knowledge_base_workspace_context';
-import type { ChatMessageRecord, ChatSessionRecord, SourceRecord } from '../../shared/types/knowledge_base_types';
 import { use_query_studio } from '../hooks/use_query_studio';
-import '../styles/query_studio_panel.css';
 import { ChatDiagnosticsSection } from './chat_diagnostics_section';
 import { ChatSourcesSection } from './chat_sources_section';
 import { SourceLibraryDrawer } from './source_library_drawer';
-
-function format_session_time(session: ChatSessionRecord): string {
-  const value = session.last_message_at ?? session.updated_at ?? session.created_at;
-  try {
-    return new Date(value).toLocaleString('zh-CN', {
-      month: 'numeric',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return value;
-  }
-}
-
-function format_message_time(message: ChatMessageRecord): string {
-  try {
-    return new Date(message.created_at).toLocaleString('zh-CN', {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return message.created_at;
-  }
-}
-
-function source_scope_text(selected_source_ids: string[], sources: SourceRecord[]): string {
-  if (!selected_source_ids.length) {
-    return '当前范围：全部来源';
-  }
-  const names = sources.filter((source) => selected_source_ids.includes(source.id)).map((source) => source.name);
-  if (!names.length) {
-    return '当前范围：已选来源';
-  }
-  if (names.length <= 2) {
-    return `当前范围：${names.join('、')}`;
-  }
-  return `当前范围：${names.slice(0, 2).join('、')} 等 ${names.length} 个来源`;
-}
-
-function latest_import_text(task_count: number, is_submitting_import: boolean): string {
-  if (is_submitting_import) {
-    return '文件正在提交到导入队列...';
-  }
-  if (!task_count) {
-    return '暂时没有导入任务。';
-  }
-  return `导入中心内共有 ${task_count} 个任务。`;
-}
+import '../styles/query_studio_panel.css';
 
 export function QueryStudioPanel() {
+  const query = use_query_studio();
   const workspace = use_knowledge_base_workspace_context();
-  const {
-    answer_sessions,
-    active_answer_session_id,
-    answer_messages,
-    is_querying,
-    is_loading_answer_sessions,
-    execute_query,
-    select_answer_session,
-    create_answer_session,
-    focus_paragraph,
-  } = use_query_studio();
-  const { upload_files, is_submitting_import, tasks } = use_import_center();
+  const upload_input_ref = useRef<HTMLInputElement | null>(null);
   const [query_text, set_query_text] = useState('');
-  const file_input_ref = useRef<HTMLInputElement | null>(null);
-  const thread_ref = useRef<HTMLDivElement | null>(null);
 
-  const source_scope_label = useMemo(
-    () => source_scope_text(workspace.selected_source_ids, workspace.sources),
+  const source_scope_text = useMemo(
+    () => selected_source_summary(workspace.selected_source_ids, workspace.sources),
     [workspace.selected_source_ids, workspace.sources],
   );
-  const import_label = useMemo(
-    () => latest_import_text(tasks.length, is_submitting_import),
-    [is_submitting_import, tasks.length],
-  );
-  const recent_sessions = answer_sessions.slice(0, 6);
+  const current_mode_label =
+    QUERY_MODE_OPTIONS.find((option) => option.id === query.query_mode)?.label ?? '问答';
 
-  useEffect(() => {
-    if (!thread_ref.current) {
+  async function handle_submit(event: FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const normalized = query_text.trim();
+    if (!normalized) {
       return;
     }
-    thread_ref.current.scrollTo({
-      top: thread_ref.current.scrollHeight,
-      behavior: 'smooth',
-    });
-  }, [answer_messages.length, is_querying]);
-
-  async function handle_submit(): Promise<void> {
-    const normalized_query = query_text.trim();
-    if (!normalized_query || is_querying) {
-      return;
-    }
-    await execute_query(normalized_query);
+    await query.execute_query(normalized);
     set_query_text('');
   }
 
-  async function handle_upload_change(event: ChangeEvent<HTMLInputElement>): Promise<void> {
-    const files = Array.from(event.target.files ?? []);
-    if (!files.length) {
+  async function handle_upload_files(files: FileList | null): Promise<void> {
+    if (!files?.length) {
       return;
     }
-    await upload_files(files, 'auto');
-    event.target.value = '';
-  }
-
-  async function handle_delete_source(source_id: string): Promise<void> {
-    const source = workspace.sources.find((item) => item.id === source_id);
-    if (!source) {
-      return;
-    }
-    if (!window.confirm(`确认删除来源“${source.name}”吗？这会同步清理段落、关系和向量索引。`)) {
-      return;
-    }
-    await workspace.delete_source(source_id);
-    workspace.set_selected_source_ids((current) => current.filter((item) => item !== source_id));
+    await workspace.upload_files(Array.from(files), 'summary');
   }
 
   return (
     <section className='kb-panel kb-chat-page'>
-      <input accept={SUPPORTED_UPLOAD_ACCEPT} hidden multiple onChange={(event) => void handle_upload_change(event)} ref={file_input_ref} type='file' />
-
-      <div className='kb-chat-topbar'>
+      <header className='kb-chat-topbar'>
         <div className='kb-chat-session-rail'>
-          <button className='kb-primary-button' onClick={() => void create_answer_session()} type='button'>
-            新建对话
-          </button>
-
-          {is_loading_answer_sessions ? <span className='kb-chat-session-status'>正在加载历史会话...</span> : null}
-
-          {recent_sessions.map((session) => (
+          {query.answer_sessions.map((session) => (
             <button
-              className={`kb-chat-session-pill ${active_answer_session_id === session.id ? 'is-active' : ''}`}
+              className={`kb-chat-session-pill ${session.id === query.active_answer_session_id ? 'is-active' : ''}`}
               key={session.id}
-              onClick={() => void select_answer_session(session.id)}
+              onClick={() => void query.select_answer_session(session.id)}
               type='button'
             >
               <strong>{session.title}</strong>
-              <span>{format_session_time(session)}</span>
+              <span>{session.last_message_at ? '最近更新' : '新会话'}</span>
             </button>
           ))}
+          {!query.answer_sessions.length ? <div className='kb-chat-session-status'>暂无会话</div> : null}
         </div>
 
         <div className='kb-chat-topbar-actions'>
-          <button className='kb-secondary-button' onClick={() => workspace.set_is_source_library_open(true)} type='button'>
+          <button className='kb-secondary-button' onClick={() => void query.create_answer_session()} type='button'>
+            新建对话
+          </button>
+          <button
+            className='kb-secondary-button'
+            onClick={() => workspace.set_is_source_library_open(true)}
+            type='button'
+          >
             来源范围
           </button>
-          <button className='kb-secondary-button' onClick={() => file_input_ref.current?.click()} type='button'>
+          <button
+            className='kb-secondary-button'
+            onClick={() => upload_input_ref.current?.click()}
+            type='button'
+          >
             导入文件
           </button>
-          <button className='kb-secondary-button' onClick={() => workspace.set_is_settings_open(true)} type='button'>
+          <button
+            className='kb-secondary-button'
+            onClick={() => workspace.set_is_settings_open(true)}
+            type='button'
+          >
             设置
           </button>
+          <input
+            hidden
+            multiple
+            onChange={(event) => void handle_upload_files(event.target.files)}
+            ref={upload_input_ref}
+            type='file'
+          />
         </div>
+      </header>
+
+      <div className='kb-chat-composer-meta'>
+        <span>{source_scope_text}</span>
+        <span>{`当前模式：${current_mode_label}`}</span>
       </div>
 
-      <div className='kb-chat-thread-shell'>
-        <div className='kb-chat-thread' ref={thread_ref}>
-          {!answer_messages.length ? (
-            <div className='kb-chat-empty'>
-              <span className='kb-context-label'>Ready</span>
+      <div className='kb-mode-tabs'>
+        {QUERY_MODE_OPTIONS.map((option) => (
+          <button
+            className={`kb-pill-button ${query.query_mode === option.id ? 'is-active' : ''}`}
+            key={option.id}
+            onClick={() => query.set_query_mode(option.id)}
+            type='button'
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      <section className='kb-chat-thread-shell'>
+        <div className='kb-chat-thread'>
+          {!query.answer_messages.length ? (
+            <section className='kb-chat-empty'>
+              <span className='kb-context-label'>就绪</span>
               <h3>开始提问</h3>
-              <p>直接输入问题，或者先导入文件，再让系统基于知识图谱和来源证据回答。</p>
-              <div className='kb-meta-strip'>
-                <span className='kb-meta-pill'>{source_scope_label}</span>
-                <span className='kb-meta-pill'>{import_label}</span>
-              </div>
-            </div>
+              <p>先提出问题，回答会显示在这里，并附带命中来源和检索诊断。</p>
+            </section>
           ) : null}
 
-          {answer_messages.map((message) => (
-            <article className={`kb-chat-bubble ${message.role === 'user' ? 'is-user' : 'is-assistant'}`} key={message.id}>
+          {query.answer_messages.map((message) => (
+            <article
+              className={`kb-chat-bubble ${message.role === 'user' ? 'is-user' : 'is-assistant'}`}
+              key={message.id}
+            >
               <div className='kb-chat-bubble-head'>
-                <strong>{message.role === 'user' ? '你' : '助手'}</strong>
-                <span>{format_message_time(message)}</span>
+                <strong>{message.role === 'user' ? '用户' : '助手'}</strong>
+                <span>{message.created_at}</span>
               </div>
-
               <div className='kb-chat-bubble-body'>{message.content}</div>
-
               {message.role === 'assistant' ? (
                 <>
-                  <ChatSourcesSection citations={message.citations} on_focus_paragraph={focus_paragraph} on_open_source={workspace.focus_source} />
+                  <ChatSourcesSection
+                    citations={message.citations}
+                    on_focus_paragraph={workspace.focus_paragraph}
+                    on_view_in_graph={workspace.focus_citation}
+                  />
                   <ChatDiagnosticsSection execution={message.execution} retrieval_trace={message.retrieval_trace} />
                 </>
               ) : null}
             </article>
           ))}
 
-          {is_querying ? (
+          {query.is_querying ? (
             <article className='kb-chat-bubble is-assistant is-pending'>
               <div className='kb-chat-bubble-head'>
                 <strong>助手</strong>
                 <span>正在生成</span>
               </div>
-              <div className='kb-chat-bubble-body'>正在检索知识图谱与来源证据，请稍候...</div>
+              <div className='kb-chat-bubble-body'>正在检索知识图谱与来源证据，请稍候…</div>
             </article>
           ) : null}
         </div>
-      </div>
+      </section>
 
-      <div className='kb-chat-composer-card'>
-        <div className='kb-chat-composer-meta'>
-          <span>{source_scope_label}</span>
-          <span>{import_label}</span>
-        </div>
-
-        <div className='kb-chat-composer-main'>
+      <section className='kb-chat-composer-card'>
+        <form className='kb-chat-composer-main' onSubmit={(event) => void handle_submit(event)}>
           <label className='kb-form-field kb-chat-composer-input'>
-            <span className='sr-only'>输入问题</span>
+            <span>输入问题</span>
             <textarea
               onChange={(event) => set_query_text(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && !event.shiftKey) {
-                  event.preventDefault();
-                  void handle_submit();
-                }
-              }}
               placeholder='输入你的问题，按 Enter 发送，Shift + Enter 换行。'
               value={query_text}
             />
           </label>
 
           <div className='kb-chat-composer-actions'>
-            <div className='kb-button-row'>
-              <button className='kb-secondary-button' onClick={() => workspace.set_is_source_library_open(true)} type='button'>
-                选择来源
-              </button>
-              <button className='kb-secondary-button' onClick={() => file_input_ref.current?.click()} type='button'>
-                上传文件
-              </button>
-              <button className='kb-secondary-button' onClick={() => workspace.set_is_settings_open(true)} type='button'>
-                模型设置
-              </button>
+            <div className='kb-chat-composer-meta'>
+              <span>{source_scope_text}</span>
+              <span>{query.is_loading_answer_sessions ? '正在同步会话…' : '会话已同步'}</span>
             </div>
-
-            <button className='kb-primary-button' disabled={is_querying || !query_text.trim()} onClick={() => void handle_submit()} type='button'>
-              {is_querying ? '发送中...' : '发送'}
+            <button className='kb-primary-button' disabled={query.is_querying || !query_text.trim()} type='submit'>
+              {query.is_querying ? '发送中…' : '发送'}
             </button>
           </div>
-        </div>
-      </div>
+        </form>
+      </section>
 
       <SourceLibraryDrawer
-        delete_source={handle_delete_source}
+        delete_source={workspace.delete_source}
         is_deleting_source={workspace.is_deleting_source}
         is_updating_source={workspace.is_updating_source}
         on_close={() => workspace.set_is_source_library_open(false)}
-        on_focus_paragraph={focus_paragraph}
+        on_focus_paragraph={workspace.focus_paragraph}
         open={workspace.is_source_library_open}
         selected_source_browser_id={workspace.selected_source_browser_id}
         selected_source_ids={workspace.selected_source_ids}
@@ -269,7 +196,7 @@ export function QueryStudioPanel() {
         update_source={workspace.update_source}
       />
 
-      <ModelConfigModal open={workspace.is_settings_open} on_close={() => workspace.set_is_settings_open(false)} />
+      <ModelConfigModal on_close={() => workspace.set_is_settings_open(false)} open={workspace.is_settings_open} />
     </section>
   );
 }

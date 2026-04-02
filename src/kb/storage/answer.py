@@ -19,7 +19,8 @@ class AnswerReadStore:
             f"""
             SELECT
                 paragraphs.*,
-                sources.name AS source_name
+                sources.name AS source_name,
+                sources.source_kind AS source_kind
             FROM paragraphs
             JOIN sources ON sources.id = paragraphs.source_id
             WHERE paragraphs.id IN ({placeholders(paragraph_ids)})
